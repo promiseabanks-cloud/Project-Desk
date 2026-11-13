@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "project-desk",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-11",
+  // Development only. The app ignores this as soon as sign-in is configured
+  // (FREEBUFF_CLIENT_ID / APP_ORIGIN), so a published site is unaffected.
+  "vars": { "LOCAL_PREVIEW": "true" },
+  "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  },
+  // Only local data during development. Sites provisions its own database
+  // and bucket when the app is published.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "project-desk", "database_id": "00000000-0000-0000-0000-000000000000" }
+  ],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "project-desk-files" }
+  ]
+}
