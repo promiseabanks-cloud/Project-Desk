@@ -1,7 +1,7 @@
 # Project Desk for WordPress
 
 The WordPress version of Project Desk: a plugin that holds the data and business rules, with a
-REST API that the phone-first client app (stage 2) talks to. It is built first for Banks
+REST API, and the phone-first app that clients and the team use. It is built first for Banks
 Solution (bankssolution.ng) and keeps every business-specific detail in settings so other
 businesses can install it later.
 
@@ -19,6 +19,29 @@ The original Cloudflare app in `src/` stays as the reference for screens and rul
 | Uploads | Resumable uploads in 8 MB pieces (default limit 2 GB per file), text notes, file versions, review with accept or changes requested. |
 | Payments | Invoices in naira (stored in kobo), overdue detection, mark paid; a paid deposit plus a signed agreement starts the work. |
 | Follow-ups | Project messages, milestone reviews, in-app notifications for every event, branded emails through `wp_mail` (FluentSMTP delivers them). WhatsApp is recorded as queued until a provider is connected through the `pd_send_whatsapp` filter. |
+
+## The app (stage 2)
+
+The plugin serves an installable app (PWA) at the portal address in settings. It can be its own
+host pointed at the same WordPress folder (for example `clients.bankssolution.ng`) or a path on
+the main site (for example `/client/`). WordPress' own paths (`/wp-json`, `/wp-admin`,
+`/wp-content`) keep working on the portal host.
+
+- Clients get Home (progress, what is waiting on them, latest news), Projects (plan with
+  approvals, files, messages), Documents (read and sign), Payments and a "Send files" button.
+- The team gets Overview (numbers, what needs attention, pipeline), Clients (onboard, preview a
+  client's portal, resend invites), Projects (phases, files, invoices, messages), a Review inbox
+  for uploads, and Settings for owners (brand, services and phases, agreement, team).
+- Bottom tabs on phones, a side rail on desktop, bottom sheets that become side panels, light and
+  dark themes, view transitions and reduced-motion support.
+- The page carries the sign-in state and REST nonce inline, so it is never cached. The service
+  worker only caches the built files and shows an offline page when there is no connection.
+- Files are served with byte-range support, so videos play and seek on phones.
+- The app uses the theme's self-hosted fonts from `assets/fonts.css` when the theme has it; other
+  sites can add stylesheets with the `pd_font_styles` filter.
+
+The source is in `wordpress/app` (React and Vite). `bun install && bun run build` there writes
+the built files into `project-desk/app`, which is committed so the plugin zip works as is.
 
 ## Security choices
 
@@ -65,7 +88,6 @@ php wordpress/tests/run.php /path/to/wordpress
 
 ## Next stages
 
-2. The phone-first app (installable PWA) served at clients.bankssolution.ng.
 3. Brief-to-client conversion from Banks Core, InvoiceNaija invoices and Paystack, WhatsApp.
 4. PDF copies of signed agreements and automatic reminders.
 5. Pilot on staging, then launch.

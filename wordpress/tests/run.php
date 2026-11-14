@@ -308,6 +308,32 @@ for ( $i = 0; $i < 11; $i++ ) {
 }
 check( 'login: rate limited after repeated failures', 429 === $last_status );
 
+/* ------------------------------------------------------------ app shell */
+
+$saved = pd_settings();
+pd_update_settings( array( 'portalUrl' => 'https://clients.example.test/' ) );
+$main = wp_parse_url( home_url(), PHP_URL_HOST );
+check( 'app: own host root is a portal page', '' === pd_portal_route( 'clients.example.test', '/' ) );
+check( 'app: own host deep path served', 'manifest.webmanifest' === pd_portal_route( 'clients.example.test:443', '/manifest.webmanifest' ) );
+check( 'app: API on portal host left to WordPress', null === pd_portal_route( 'clients.example.test', '/wp-json/project-desk/v1/session' ) );
+check( 'app: wp-admin on portal host left alone', null === pd_portal_route( 'clients.example.test', '/wp-admin/' ) );
+check( 'app: main site untouched when portal has its own host', null === pd_portal_route( $main, '/' ) && null === pd_portal_route( $main, '/about/' ) );
+pd_update_settings( array( 'portalUrl' => home_url( '/client/' ) ) );
+check( 'app: path portal served on main host', '' === pd_portal_route( $main, '/client/' ) && '' === pd_portal_route( $main, '/client' ) && 'sw.js' === pd_portal_route( $main, '/client/sw.js?x=1' ) );
+check( 'app: other main-site pages untouched', null === pd_portal_route( $main, '/clients-stories/' ) && null === pd_portal_route( $main, '/' ) );
+$shell = pd_app_shell( array( 'user' => array( 'name' => '</script><script>alert(1)</script>' ) ) );
+check( 'app: boot payload cannot break out of its script tag', false === strpos( $shell, '</script><script>alert' ) );
+check( 'app: shell links manifest and is noindex', false !== strpos( $shell, 'manifest.webmanifest' ) && false !== strpos( $shell, 'noindex' ) );
+$manifest = pd_app_manifest();
+check( 'app: manifest installs as standalone app', 'standalone' === $manifest['display'] && '/client/' === $manifest['scope'] );
+pd_update_settings( array( 'portalUrl' => $saved['portal_url'] ) );
+
+check( 'range: open-ended', array( 100, 999 ) === pd_parse_range( 'bytes=100-', 1000 ) );
+check( 'range: bounded and clamped', array( 0, 1 ) === pd_parse_range( 'bytes=0-1', 1000 ) && array( 900, 999 ) === pd_parse_range( 'bytes=900-5000', 1000 ) );
+check( 'range: suffix', array( 950, 999 ) === pd_parse_range( 'bytes=-50', 1000 ) );
+check( 'range: outside file refused', false === pd_parse_range( 'bytes=1000-', 1000 ) && false === pd_parse_range( 'bytes=5-2', 1000 ) );
+check( 'range: multi-range or junk sends whole file', null === pd_parse_range( 'bytes=0-1,5-6', 1000 ) && null === pd_parse_range( 'items=1-2', 1000 ) );
+
 /* ------------------------------------------------------------ report */
 
 ob_end_clean();
