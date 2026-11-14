@@ -131,6 +131,8 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
           <span className="eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
           <h1>{greeting()}{firstName ? `, ${firstName}` : ''}.</h1>
         </header>
+        <div className="dash">
+        <div className="dash-main">
         {active && (
           <button className="hero" style={{ width: '100%', border: 0, textAlign: 'left', cursor: 'pointer', display: 'block' }} onClick={() => go(`${prefix}projects/${active.id}`)}>
             <div className="hero-row">
@@ -173,6 +175,21 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
             ))}
           </div>
         </section>
+        {data.projects.length > 1 && (
+          <section className="section">
+            <div className="section-head">
+              <h3>All projects</h3>
+            </div>
+            <div className="list stagger">
+              {data.projects.map((p) => (
+                <ProjectRow key={p.id} project={p} onOpen={() => go(`${prefix}projects/${p.id}`)} />
+              ))}
+            </div>
+          </section>
+        )}
+        </div>
+        <aside className="dash-side">
+        <Glance data={data} prefix={prefix} />
         <section className="section">
           <div className="section-head">
             <h3>Latest</h3>
@@ -193,8 +210,11 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
                 </span>
               </div>
             ))}
+            {data.notifications.length === 0 && <Empty icon="bell">News about your project shows up here.</Empty>}
           </div>
         </section>
+        </aside>
+        </div>
       </div>
     )
   }
@@ -226,7 +246,6 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
           if (unread && !preview) api('/notifications/read', { method: 'POST' }).then(reload)
         }}
         onSignOut={onSignOut}
-        hideTabs={preview}
       >
         {body}
       </Shell>
@@ -340,6 +359,8 @@ function ProjectView({
           </span>
         )}
       </div>
+      <div className="dash">
+      <div className="dash-main">
       <div style={{ margin: '22px 0 18px' }}>
         <Segmented
           value={tab}
@@ -378,6 +399,95 @@ function ProjectView({
               </div>
             </div>
           )}
+        </div>
+      )}
+      </div>
+      <aside className="dash-side desktop-only">
+        <ProjectSide project={project} preview={preview} open={open} setTab={setTab} />
+      </aside>
+      </div>
+    </div>
+  )
+}
+
+/** At-a-glance numbers on the home screen. */
+function Glance({ data, prefix }: { data: PortalData; prefix: string }) {
+  const active = data.projects.find((p) => p.status === 'active') ?? data.projects[0]
+  const work = active ? active.phases : []
+  const done = work.filter((p) => p.status === 'completed').length
+  const toSign = data.documents.filter((d) => d.status === 'awaiting_signature').length
+  const due = data.projects.flatMap((p) => p.payments).filter((p) => p.status === 'due' || p.status === 'overdue')
+  const owed = due.reduce((s, p) => s + p.amount, 0)
+  const files = data.projects.reduce((n, p) => n + p.assets.filter((a) => !p.assets.some((x) => x.versionOf === a.id)).length, 0)
+  const items: [string, string, string, string, string][] = [
+    ['check', 'Stages done', work.length ? `${done} of ${work.length}` : '—', active ? `projects/${active.id}` : 'projects', ''],
+    ['sign', 'To sign', toSign ? String(toSign) : 'None', 'documents', toSign ? 'warn' : ''],
+    ['wallet', 'To pay', owed ? money(owed) : 'All paid', 'payments', due.some((p) => p.status === 'overdue') ? 'bad' : ''],
+    ['folder', 'Files shared', String(files), active ? `projects/${active.id}?tab=files` : 'projects', ''],
+  ]
+  return (
+    <section className="glance stagger" aria-label="At a glance">
+      {items.map(([icon, label, value, to, tone]) => (
+        <button key={label} className={`glance-item ${tone}`} onClick={() => go(prefix + to)}>
+          <Icon name={icon} />
+          <span className="glance-label">{label}</span>
+          <span className="glance-value">{value}</span>
+        </button>
+      ))}
+    </section>
+  )
+}
+
+/** Desktop side panel on a project: where it stands, money, paperwork and quick actions. */
+function ProjectSide({ project, preview, open, setTab }: { project: Project; preview: boolean; open: (s: Sheets) => void; setTab: (t: string) => void }) {
+  const now = currentPhase(project)
+  const next = project.phases.find((p) => p.status === 'queued')
+  const done = project.phases.filter((p) => p.status === 'completed').length
+  const paid = project.payments.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
+  const total = project.payments.filter((p) => p.status !== 'cancelled').reduce((s, p) => s + p.amount, 0)
+  const rows: [string, string][] = [
+    ['Now', now ? now.name : project.status === 'completed' ? 'Completed' : '—'],
+    ['Up next', next ? next.name : '—'],
+    ['Stages', `${done} of ${project.phases.length} done`],
+    ['Started', project.startDate ? date(project.startDate) : '—'],
+    ['Target', project.dueDate ? date(project.dueDate) : project.recurring ? 'Monthly' : '—'],
+  ]
+  return (
+    <div className="side-stack">
+      <div className="card">
+        <span className="eyebrow">Where it stands</span>
+        <dl className="facts">
+          {rows.map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      {total > 0 && (
+        <div className="card">
+          <span className="eyebrow">Payments</span>
+          <div className="between" style={{ marginTop: 10 }}>
+            <strong className="amount">{money(paid)}</strong>
+            <span className="muted" style={{ fontSize: '.88rem' }}>of {money(total)}</span>
+          </div>
+          <div className="bar" style={{ marginTop: 10 }}>
+            <i style={{ width: `${Math.round((paid / total) * 100)}%` }} />
+          </div>
+          <button className="link-btn" style={{ marginTop: 12 }} onClick={() => go((preview ? `clients/${project.clientId}/portal/` : '') + 'payments')}>
+            See invoices
+          </button>
+        </div>
+      )}
+      {!preview && (
+        <div className="card side-actions">
+          <Button variant="block" icon="upload" onClick={() => open({ kind: 'upload', project: project.id })}>
+            Send files
+          </Button>
+          <Button variant="ghost" icon="chat" onClick={() => setTab('messages')}>
+            Message the team
+          </Button>
         </div>
       )}
     </div>
