@@ -113,7 +113,7 @@ function pd_default_agreement(): string {
 function pd_settings(): array {
 	$defaults = array(
 		'business_name'     => get_bloginfo( 'name' ) ? get_bloginfo( 'name' ) : 'Banks Solution',
-		'brand_color'       => '#0f6b4f',
+		'brand_color'       => '#0B3B40',
 		'logo_url'          => '',
 		'currency'          => 'NGN',
 		'portal_url'        => home_url( '/client/' ),

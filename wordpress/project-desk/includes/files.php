@@ -206,7 +206,25 @@ function pd_file_headers( string $mime, string $name, int $size ): array {
 	);
 }
 
-/** Streams a stored file and ends the request. */
+/**
+ * Reads a single "bytes=" range. Returns [start, end] (inclusive), null when there is no usable
+ * range (send the whole file), or false when the range is outside the file (answer 416).
+ * Phones need this to play and seek videos.
+ */
+function pd_parse_range( string $header, int $size ) {
+	if ( ! preg_match( '/^bytes=(\d*)-(\d*)$/', trim( $header ), $m ) || ( '' === $m[1] && '' === $m[2] ) ) {
+		return null;
+	}
+	if ( '' === $m[1] ) {
+		$length = min( (int) $m[2], $size );
+		return $length > 0 ? array( $size - $length, $size - 1 ) : false;
+	}
+	$start = (int) $m[1];
+	$end   = '' === $m[2] ? $size - 1 : min( (int) $m[2], $size - 1 );
+	return ( $start >= $size || $start > $end ) ? false : array( $start, $end );
+}
+
+/** Streams a stored file (whole or one byte range) and ends the request. */
 function pd_send_file( array $asset ): void {
 	$path = pd_storage_dir() . '/' . $asset['storage_key'];
 	$real = realpath( $path );
@@ -215,14 +233,43 @@ function pd_send_file( array $asset ): void {
 		status_header( 404 );
 		exit;
 	}
+	$size  = (int) filesize( $real );
+	$range = isset( $_SERVER['HTTP_RANGE'] ) ? pd_parse_range( sanitize_text_field( wp_unslash( $_SERVER['HTTP_RANGE'] ) ), $size ) : null;
 	nocache_headers();
-	foreach ( pd_file_headers( (string) $asset['mime'], (string) $asset['name'], (int) filesize( $real ) ) as $h => $v ) {
+	foreach ( pd_file_headers( (string) $asset['mime'], (string) $asset['name'], $size ) as $h => $v ) {
 		header( $h . ': ' . $v );
 	}
+	header( 'Accept-Ranges: bytes' );
 	while ( ob_get_level() ) {
 		ob_end_clean();
 	}
-	readfile( $real ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+	if ( false === $range ) {
+		status_header( 416 );
+		header( 'Content-Range: bytes */' . $size );
+		header( 'Content-Length: 0' );
+		exit;
+	}
+	if ( null === $range ) {
+		readfile( $real ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		exit;
+	}
+	[ $start, $end ] = $range;
+	status_header( 206 );
+	header( 'Content-Range: bytes ' . $start . '-' . $end . '/' . $size );
+	header( 'Content-Length: ' . ( $end - $start + 1 ) );
+	$fh = fopen( $real, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+	fseek( $fh, $start );
+	$left = $end - $start + 1;
+	while ( $left > 0 && ! feof( $fh ) ) {
+		$chunk = fread( $fh, min( 1048576, $left ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions
+		if ( false === $chunk ) {
+			break;
+		}
+		echo $chunk; // phpcs:ignore WordPress.Security.EscapeOutput
+		$left -= strlen( $chunk );
+		flush();
+	}
+	fclose( $fh ); // phpcs:ignore WordPress.WP.AlternativeFunctions
 	exit;
 }
 
