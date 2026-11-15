@@ -537,25 +537,102 @@ export function DocumentSheet({ doc, onClose, canSign, onSigned }: { doc: Doc; o
 }
 
 export function PaymentRow({ p, action }: { p: Payment; action?: React.ReactNode }) {
-  const tone = p.status === 'paid' ? 'ok' : p.status === 'overdue' ? 'bad' : p.status === 'cancelled' ? '' : 'warn'
+  const awaiting = p.status !== 'paid' && p.status !== 'cancelled' && !!p.proofAt
+  const tone = p.status === 'paid' ? 'ok' : awaiting ? '' : p.status === 'overdue' ? 'bad' : p.status === 'cancelled' ? '' : 'warn'
+  const label = p.status === 'overdue' ? 'Overdue' : p.status[0].toUpperCase() + p.status.slice(1)
   return (
     <div className="row">
       <span className={`icon-tile ${tone}`}>
-        <Icon name={p.status === 'paid' ? 'check' : p.status === 'overdue' ? 'alert' : 'wallet'} />
+        <Icon name={p.status === 'paid' ? 'check' : awaiting ? 'clock' : p.status === 'overdue' ? 'alert' : 'wallet'} />
       </span>
       <span className="grow">
         <span className="title" style={{ display: 'block' }}>
           {p.label}
         </span>
         <span className="sub" style={{ display: 'block' }}>
-          {p.status === 'paid' ? `Paid ${date(p.paidAt)}${p.method ? ` · ${p.method}` : ''}` : p.dueDate ? `Due ${date(p.dueDate)}` : 'Due'}
+          {p.status === 'paid'
+            ? `Paid ${date(p.paidAt)}${p.method ? ` · ${p.method}` : ''}`
+            : awaiting
+              ? `Proof sent ${date(p.proofAt)} · awaiting confirmation`
+              : p.dueDate
+                ? `Due ${date(p.dueDate)}`
+                : 'Due'}
         </span>
       </span>
       <span style={{ textAlign: 'right', display: 'grid', gap: 4, justifyItems: 'end' }}>
         <span className="amount">{money(p.amount, p.currency)}</span>
-        {action ?? <Pill tone={tone}>{p.status === 'overdue' ? 'Overdue' : p.status[0].toUpperCase() + p.status.slice(1)}</Pill>}
+        {action ?? <Pill tone={tone}>{awaiting ? 'Checking' : label}</Pill>}
       </span>
     </div>
+  )
+}
+
+/** A client's invoice with the ways to pay it and to send proof of payment. */
+export function ClientPaymentCard({ p, project, canAct, onProof }: { p: Payment; project?: string; canAct: boolean; onProof: () => void }) {
+  const open = p.status === 'due' || p.status === 'overdue'
+  return (
+    <div className={`pay-card${open ? ' open' : ''}`}>
+      <PaymentRow p={p} />
+      {project && <span className="pay-project">{project}</span>}
+      {open && canAct && (
+        <div className="pay-actions">
+          {p.externalUrl && (
+            <a className="btn accent small" href={p.externalUrl} target="_blank" rel="noopener">
+              <Icon name="wallet" />
+              View and pay
+            </a>
+          )}
+          <Button variant={p.externalUrl ? 'ghost small' : 'accent small'} icon="upload" onClick={onProof}>
+            {p.proofAt ? 'Send another proof' : "I've paid, send proof"}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** The client attaches a transfer receipt (or types the reference) for the team to confirm. */
+export function ProofSheet({ payment, projectId, onClose, onDone }: { payment: Payment; projectId: number; onClose: () => void; onDone: () => void }) {
+  const [file, setFile] = useState<File | null>(null)
+  const [note, setNote] = useState('')
+  const [progress, setProgress] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const send = async () => {
+    setBusy(true)
+    try {
+      const assetId = file ? await uploadFile(projectId, file, 'payments', setProgress) : 0
+      await api(`/payments/${payment.id}/proof`, { body: { assetId, note } })
+      haptic([6, 30, 6])
+      toast('Proof sent', 'We will confirm your payment and email your receipt.')
+      onDone()
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet title="Send proof of payment" onClose={onClose}>
+      <div className="proof-sum">
+        <span className="muted">{payment.label}</span>
+        <strong className="amount">{money(payment.amount, payment.currency)}</strong>
+      </div>
+      <input ref={input} type="file" accept="image/*,application/pdf" hidden onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+      <button className={`drop proof-drop${file ? ' has' : ''}`} onClick={() => input.current?.click()}>
+        <Icon name={file ? 'check' : 'upload'} />
+        <span>
+          <strong>{file ? file.name : 'Attach your transfer receipt'}</strong>
+          <span className="muted">{file ? `${bytes(file.size)} · tap to change` : 'A screenshot or PDF from your bank app'}</span>
+        </span>
+        {busy && file && <i className="proof-bar" style={{ width: `${Math.round(progress * 100)}%` }} />}
+      </button>
+      <Field label="Transfer reference or note (optional)">
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. GTB transfer, ref 0034…" />
+      </Field>
+      <Button variant="accent block" busy={busy} disabled={!file && note.trim().length < 3} onClick={send}>
+        Send to the team
+      </Button>
+    </Sheet>
   )
 }
 

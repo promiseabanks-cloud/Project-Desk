@@ -10,6 +10,7 @@ export type Brand = {
   googleClientId: string
   maxUploadMb: number
   categories: string[]
+  depositPercent?: number
   services: Record<string, { label: string; recurring: boolean }>
 }
 
@@ -66,6 +67,10 @@ export type Payment = {
   status: 'due' | 'paid' | 'overdue' | 'cancelled'
   paidAt: string | null
   method: string
+  externalUrl: string
+  proofAt: string | null
+  proofAssetId: number | null
+  proofNote: string
 }
 
 export type Message = { id: number; authorRole: 'staff' | 'client'; authorName: string; body: string; createdAt: string }
@@ -84,6 +89,8 @@ export type Project = {
   dueDate: string | null
   progress: number
   workUnlocked: boolean
+  price: number
+  depositPercent: number
   phases: Phase[]
   assets: Asset[]
   payments: Payment[]
@@ -306,4 +313,5 @@ export const CATEGORY_LABEL: Record<string, string> = {
   references: 'References',
   data: 'Data',
   notes: 'Notes',
+  payments: 'Payment proof',
 }

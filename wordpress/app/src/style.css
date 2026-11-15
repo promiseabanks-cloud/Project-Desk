@@ -1450,3 +1450,55 @@ select option { background: var(--bg); color: var(--fg); }
   .dash-side .side-stack { grid-template-columns: 1fr; margin-top: 0; }
   body:has(.side-actions) .fab { display: none; }
 }
+
+/* Payments: invoice cards with pay and proof actions */
+.pay-card { border-bottom: 1px solid var(--line); }
+.pay-card .row { border-bottom: 0; }
+.pay-card .pay-project { display: block; margin: -8px 0 12px 58px; font-size: 0.8rem; color: var(--muted); }
+.pay-card .pay-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 16px 58px;
+  animation: rise 0.45s var(--spring) both;
+}
+.pay-card a.btn { text-decoration: none; }
+.proof-sum {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--r-md, 14px);
+  background: var(--tint);
+}
+.proof-sum .amount { font-size: 1.2rem; }
+.proof-drop {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-start;
+  text-align: left;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 18px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+}
+.proof-drop > span { display: grid; gap: 2px; min-width: 0; }
+.proof-drop strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proof-drop.has { border-style: solid; border-color: var(--accent); background: var(--tint); }
+.proof-drop svg { width: 26px; height: 26px; flex: none; }
+.proof-bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent); transition: width 0.2s; }
+.money-fields .hint { margin: -6px 0 14px; font-size: 0.85rem; color: var(--muted); }
+.money-fields .hint strong { color: var(--fg); }
+.price-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.price-card > div { display: grid; gap: 4px; min-width: 0; }
+.price-card .amount { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; }
+.pay-card .pay-note { align-self: center; font-size: 0.85rem; }
+.logo-field { display: flex; gap: 10px; align-items: center; }
+.logo-field img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex: none; background: var(--tint); }
+.logo-field input { flex: 1; min-width: 0; }

@@ -141,6 +141,8 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 				'dueDate'      => $p['due_date'],
 				'progress'     => $ph ? (int) round( 100 * $done / count( $ph ) ) : 0,
 				'workUnlocked' => pd_work_unlocked( $pid ),
+				'price'        => (int) $p['price'],
+				'depositPercent' => (int) $p['deposit_percent'],
 				'phases'       => array_map(
 					static fn( $x ) => array(
 						'id'           => (int) $x['id'],
@@ -169,6 +171,10 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 						'status'   => pd_payment_state( $x ),
 						'paidAt'   => pd_iso( $x['paid_at'] ),
 						'method'   => $x['method'],
+						'externalUrl'  => (string) $x['external_url'],
+						'proofAt'      => pd_iso( $x['proof_at'] ),
+						'proofAssetId' => $x['proof_asset_id'] ? (int) $x['proof_asset_id'] : null,
+						'proofNote'    => (string) $x['proof_note'],
 					),
 					$payments[ $pid ] ?? array()
 				),
@@ -226,7 +232,7 @@ function pd_load_notifications( string $audience, int $client_id = 0, int $limit
 /* --------------------------------------------------------------- onboarding */
 
 /** Creates a project with the opening phases and the service's work phases. */
-function pd_create_project( int $client_id, string $name, string $service, string $summary = '', ?string $due = null, ?int $manager_id = null ) {
+function pd_create_project( int $client_id, string $name, string $service, string $summary = '', ?string $due = null, ?int $manager_id = null, int $price = 0, ?int $deposit_percent = null ) {
 	global $wpdb;
 	$services = pd_settings()['services'];
 	if ( ! isset( $services[ $service ] ) ) {
@@ -244,6 +250,8 @@ function pd_create_project( int $client_id, string $name, string $service, strin
 			'manager_id' => $manager_id,
 			'start_date' => gmdate( 'Y-m-d' ),
 			'due_date'   => $due,
+			'price'      => max( 0, $price ),
+			'deposit_percent' => max( 0, min( 100, null === $deposit_percent ? (int) pd_settings()['deposit_percent'] : $deposit_percent ) ),
 			'created_at' => pd_now(),
 		)
 	);
@@ -268,6 +276,21 @@ function pd_create_project( int $client_id, string $name, string $service, strin
 		);
 	}
 	return $project_id;
+}
+
+/**
+ * Price (kobo) and deposit % from an onboarding or project form. Only people who manage money
+ * can set them; for everyone else they stay at no price and the default deposit.
+ *
+ * @return array{0:int,1:?int}
+ */
+function pd_price_input( array $in ): array {
+	if ( ! current_user_can( 'pd_manage_money' ) ) {
+		return array( 0, null );
+	}
+	$price = isset( $in['price'] ) && '' !== $in['price'] ? (int) pd_money( $in['price'] ) : 0;
+	$pct   = isset( $in['depositPercent'] ) && '' !== $in['depositPercent'] ? max( 0, min( 100, (int) $in['depositPercent'] ) ) : null;
+	return array( $price, $pct );
 }
 
 /** Creates an agreement awaiting signature. */
@@ -338,8 +361,10 @@ function pd_onboard_client( array $in ) {
 	$client_id  = (int) $wpdb->insert_id;
 	$label      = $svcs[ $service ]['label'];
 	$name       = pd_text( $in['projectName'] ?? '', 160 ) ?: $company . ' — ' . $label;
-	$project_id = pd_create_project( $client_id, $name, $service, pd_textarea( $in['summary'] ?? '', 2000 ), pd_date( $in['dueDate'] ?? '' ) );
-	$doc_id     = pd_create_document( $client_id, $project_id, 'Service agreement — ' . $label, pd_agreement_text( $company, $label ) );
+	[ $price, $pct ] = pd_price_input( $in );
+	$project_id      = pd_create_project( $client_id, $name, $service, pd_textarea( $in['summary'] ?? '', 2000 ), pd_date( $in['dueDate'] ?? '' ), null, $price, $pct );
+	$pct             = (int) pd_get_row( 'projects', $project_id )['deposit_percent'];
+	$doc_id          = pd_create_document( $client_id, $project_id, 'Service agreement — ' . $label, pd_agreement_text( $company, $label, $price, $pct ) );
 
 	$s = pd_settings();
 	pd_notify(
@@ -349,7 +374,9 @@ function pd_onboard_client( array $in ) {
 				'client_id'  => $client_id,
 				'project_id' => $project_id,
 				'title'      => sprintf( 'Welcome to %s, %s', $s['business_name'], $company ),
-				'body'       => 'Your service agreement is ready to sign in the Documents tab. Work starts once it is signed and the deposit is paid.',
+				'body'       => $price > 0
+					? sprintf( 'Your service agreement is ready to sign in the Documents tab. Once you sign it, your %d%% deposit invoice (%s) is sent to you, and work starts when it is paid.', $pct, pd_format_money( (int) round( $price * $pct / 100 ) ) )
+					: 'Your service agreement is ready to sign in the Documents tab. Work starts once it is signed and the deposit is paid.',
 				'channels'   => array(),
 			),
 		)
@@ -607,6 +634,9 @@ function pd_sign_document( int $document_id, int $client_id, int $user_id, strin
 		)
 	);
 	if ( $doc['project_id'] ) {
+		if ( 'agreement' === $doc['kind'] ) {
+			pd_create_deposit_invoice( (int) $doc['project_id'] );
+		}
 		pd_maybe_unlock_work( (int) $doc['project_id'] );
 	}
 	return pd_iso( $now );

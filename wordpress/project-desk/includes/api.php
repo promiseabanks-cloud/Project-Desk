@@ -212,9 +212,13 @@ function pd_register_routes(): void {
 			if ( ! $client || ! $name ) {
 				return pd_error( 'Choose a client and name the project.' );
 			}
-			$id = pd_create_project( (int) $client['id'], $name, sanitize_key( (string) ( $b['service'] ?? '' ) ), pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ) );
+			[ $price, $pct ] = pd_price_input( $b );
+			$id              = pd_create_project( (int) $client['id'], $name, sanitize_key( (string) ( $b['service'] ?? '' ) ), pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ), null, $price, $pct );
 			if ( is_wp_error( $id ) ) {
 				return $id;
+			}
+			if ( pd_agreement_signed( $id ) ) {
+				pd_create_deposit_invoice( $id );
 			}
 			pd_notify(
 				array(
@@ -257,8 +261,20 @@ function pd_register_routes(): void {
 			if ( array_key_exists( 'dueDate', $b ) ) {
 				$fields['due_date'] = pd_date( $b['dueDate'] );
 			}
+			if ( current_user_can( 'pd_manage_money' ) ) {
+				[ $price, $pct ] = pd_price_input( $b );
+				if ( array_key_exists( 'price', $b ) ) {
+					$fields['price'] = $price;
+				}
+				if ( null !== $pct ) {
+					$fields['deposit_percent'] = $pct;
+				}
+			}
 			if ( $fields ) {
 				$wpdb->update( pd_table( 'projects' ), $fields, array( 'id' => $id ) );
+			}
+			if ( isset( $fields['price'] ) && pd_agreement_signed( $id ) ) {
+				pd_create_deposit_invoice( $id );
 			}
 			return array( 'ok' => true );
 		},
@@ -362,41 +378,13 @@ function pd_register_routes(): void {
 			if ( ! $project ) {
 				return pd_error( 'Project not found.', 404 );
 			}
-			$b      = pd_json_body( $r );
-			$label  = pd_text( $b['label'] ?? '', 160 );
-			$amount = pd_money( $b['amount'] ?? null );
-			if ( ! $label || ! $amount ) {
-				return pd_error( 'Add a label and an amount.' );
+			$b          = pd_json_body( $r );
+			$label      = pd_text( $b['label'] ?? '', 160 );
+			$amount     = pd_money( $b['amount'] ?? null );
+			$payment_id = pd_create_invoice( $project, $label, (string) ( $b['kind'] ?? '' ), (int) $amount, pd_date( $b['dueDate'] ?? '' ) );
+			if ( is_wp_error( $payment_id ) ) {
+				return $payment_id;
 			}
-			$wpdb->insert(
-				pd_table( 'payments' ),
-				array(
-					'project_id' => $project['id'],
-					'client_id'  => $project['client_id'],
-					'label'      => $label,
-					'kind'       => pd_one_of( $b['kind'] ?? '', array( 'deposit', 'milestone', 'balance', 'monthly' ), 'milestone' ),
-					'amount'     => $amount,
-					'currency'   => pd_settings()['currency'],
-					'due_date'   => pd_date( $b['dueDate'] ?? '' ),
-					'status'     => 'due',
-					'created_at' => pd_now(),
-				)
-			);
-			$payment_id = (int) $wpdb->insert_id;
-			$client     = pd_get_row( 'clients', (int) $project['client_id'] );
-			pd_notify(
-				array(
-					array(
-						'audience'   => 'client',
-						'client_id'  => (int) $project['client_id'],
-						'project_id' => (int) $project['id'],
-						'title'      => 'New invoice: ' . $label,
-						'body'       => sprintf( '%s %s is due%s. See the Payments tab.', pd_settings()['currency'], number_format( $amount / 100, 2 ), pd_date( $b['dueDate'] ?? '' ) ? ' by ' . pd_date( $b['dueDate'] ) : '' ),
-						'channels'   => array( 'email' ),
-						'email'      => $client['email'] ?? '',
-					),
-				)
-			);
 			return new WP_REST_Response( array( 'paymentId' => $payment_id ), 201 );
 		},
 		'pd_can_money'
@@ -416,35 +404,29 @@ function pd_register_routes(): void {
 			if ( ! $status ) {
 				return pd_error( 'Status must be due, paid or cancelled.' );
 			}
-			$wpdb->update(
-				pd_table( 'payments' ),
-				array(
-					'status'  => $status,
-					'paid_at' => 'paid' === $status ? pd_now() : null,
-					'method'  => 'paid' === $status ? ( pd_text( $b['method'] ?? '', 120 ) ?: 'Bank transfer' ) : '',
-				),
-				array( 'id' => $payment['id'] )
-			);
-			if ( 'paid' === $status && 'paid' !== $payment['status'] ) {
-				$client = pd_get_row( 'clients', (int) $payment['client_id'] );
-				pd_notify(
-					array(
-						array(
-							'audience'   => 'client',
-							'client_id'  => (int) $payment['client_id'],
-							'project_id' => (int) $payment['project_id'],
-							'title'      => 'Payment received: ' . $payment['label'],
-							'body'       => sprintf( 'We received %s %s. Thank you!', $payment['currency'], number_format( $payment['amount'] / 100, 2 ) ),
-							'channels'   => array( 'email' ),
-							'email'      => $client['email'] ?? '',
-						),
-					)
-				);
-				pd_maybe_unlock_work( (int) $payment['project_id'] );
+			if ( 'paid' === $status ) {
+				pd_mark_payment_paid( (int) $payment['id'], pd_text( $b['method'] ?? '', 120 ) ?: 'Bank transfer' );
+			} else {
+				$wpdb->update( pd_table( 'payments' ), array( 'status' => $status, 'paid_at' => null, 'method' => '' ), array( 'id' => $payment['id'] ) );
 			}
 			return array( 'ok' => true, 'status' => $status );
 		},
 		'pd_can_money'
+	);
+
+	pd_route(
+		'/payments/(?P<id>\d+)/proof',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			$client_id = pd_client_id_for_user( get_current_user_id() );
+			if ( ! $client_id ) {
+				return pd_error( 'Only the client can send proof of payment.', 403 );
+			}
+			$b      = pd_json_body( $r );
+			$result = pd_submit_payment_proof( (int) $r['id'], $client_id, (int) ( $b['assetId'] ?? 0 ), pd_textarea( $b['note'] ?? '', 1000 ) );
+			return is_wp_error( $result ) ? $result : array( 'ok' => true );
+		},
+		'pd_can_any'
 	);
 
 	pd_route(
@@ -544,6 +526,19 @@ function pd_register_routes(): void {
 				'maxUploadMb'     => (int) $s['max_upload_mb'],
 				'services'        => $s['services'],
 				'agreement'       => $s['agreement'],
+				'legalName'       => $s['legal_name'],
+				'rcNumber'        => $s['rc_number'],
+				'businessEmail'   => $s['business_email'],
+				'businessPhone'   => $s['business_phone'],
+				'businessAddress' => $s['business_address'],
+				'businessWebsite' => $s['business_website'],
+				'tagline'         => $s['tagline'],
+				'emailLogoUrl'    => $s['email_logo_url'],
+				'emailLogoDefault' => pd_default_email_logo(),
+				'depositPercent'  => (int) $s['deposit_percent'],
+				'invoiceDueDays'  => (int) $s['invoice_due_days'],
+				'bankDetails'     => $s['bank_details'],
+				'invoiceNaija'    => pd_invoicenaija_active(),
 			);
 		},
 		'pd_can_settings'
@@ -694,6 +689,10 @@ function pd_register_routes(): void {
 				)
 			);
 			$asset_id = (int) $wpdb->insert_id;
+			if ( 'payments' === $session['category'] ) {
+				// Proof of payment: the proof route tells the team, with the invoice it belongs to.
+				return new WP_REST_Response( array( 'assetId' => $asset_id ), 201 );
+			}
 			$project  = pd_get_row( 'projects', (int) $session['project_id'] );
 			$client   = pd_get_row( 'clients', (int) $session['client_id'] );
 			pd_notify(

@@ -308,6 +308,129 @@ for ( $i = 0; $i < 11; $i++ ) {
 }
 check( 'login: rate limited after repeated failures', 429 === $last_status );
 
+/* ------------------------------------------------------------ billing */
+
+as_user( $owner );
+pd_update_settings( array( 'legalName' => 'Banks Solution Limited', 'rcNumber' => '8259372', 'businessAddress' => 'Lagos and Ilorin, Nigeria', 'businessPhone' => '+2349132826032', 'businessEmail' => 'hello@banks.test', 'bankDetails' => "GTBank 0123456789\nBanks Solution Limited" ) );
+$r = call( 'POST', '/clients', array( 'company' => 'Priced Co', 'contactName' => 'Pat Price', 'email' => 'pat@priced.test', 'service' => 'website', 'price' => '1,000,000' ) );
+check( 'billing: onboard with a price', 201 === $r->get_status(), data( $r ) );
+$pp = data( $r );
+$pp_project = pd_get_row( 'projects', (int) $pp['projectId'] );
+check( 'billing: price kept in kobo with the default 50% deposit', 100000000 === (int) $pp_project['price'] && 50 === (int) $pp_project['deposit_percent'] );
+$pp_doc = pd_get_row( 'documents', (int) $pp['documentId'] );
+check( 'billing: agreement states price and deposit', false !== strpos( $pp_doc['body'], '₦1,000,000' ) && false !== strpos( $pp_doc['body'], '50% (₦500,000)' ), $pp_doc['body'] );
+check( 'billing: no invoice before signing', 0 === (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . pd_table( 'payments' ) . ' WHERE project_id = %d', $pp['projectId'] ) ) );
+
+as_user( $manager );
+$mr = data( call( 'POST', '/clients', array( 'company' => 'NoMoney Ltd', 'contactName' => 'Nm', 'email' => 'nm@nomoney.test', 'service' => 'website', 'price' => '900000' ) ) );
+check( 'billing: managers without money access cannot set a price', 0 === (int) pd_get_row( 'projects', (int) $mr['projectId'] )['price'] );
+
+$pat = get_user_by( 'email', 'pat@priced.test' );
+as_user( $pat->ID );
+$GLOBALS['pd_mail'] = array();
+call( 'POST', '/documents/' . $pp['documentId'] . '/sign', array( 'name' => 'Pat Price', 'signature' => $sig, 'agree' => true ) );
+$dep = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit'", $pp['projectId'] ), ARRAY_A );
+check( 'billing: signing raises the deposit invoice', $dep && 50000000 === (int) $dep['amount'] && 'due' === $dep['status'] && $dep['due_date'] );
+$mail = last_mail_to( 'pat@priced.test' );
+check( 'billing: deposit invoice emailed with bank details', $mail && false !== strpos( $mail['subject'], 'New invoice: Deposit (50%)' ) && false !== strpos( $mail['message'], 'GTBank 0123456789' ) );
+check( 'email: branded footer with legal name, RC and contacts', $mail && false !== strpos( $mail['message'], 'Banks Solution Limited · RC 8259372 · Lagos and Ilorin, Nigeria' ) && false !== strpos( $mail['message'], 'hello@banks.test' ) && false !== strpos( $mail['message'], '+2349132826032' ) );
+check( 'email: logo in the header', $mail && false !== strpos( $mail['message'], '<img src=' ) );
+pd_create_deposit_invoice( (int) $pp['projectId'] );
+check( 'billing: deposit invoice raised only once', 1 === (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit'", $pp['projectId'] ) ) );
+
+$pp_portal = data( call( 'GET', '/portal' ) );
+check( 'billing: client sees price and invoice', 100000000 === $pp_portal['projects'][0]['price'] && 'due' === $pp_portal['projects'][0]['payments'][0]['status'] );
+check( 'proof: needs a file or reference', 400 === call( 'POST', '/payments/' . $dep['id'] . '/proof', array() )->get_status() );
+$start = data( call( 'POST', '/projects/' . $pp['projectId'] . '/uploads', array( 'name' => 'transfer.png', 'size' => 4, 'category' => 'payments' ) ) );
+call( 'PUT', '/uploads/' . $start['uploadId'], 'abcd', array( 'offset' => 0 ) );
+$wpdb->query( 'DELETE FROM ' . pd_table( 'notifications' ) );
+$proof_asset = (int) data( call( 'POST', '/uploads/' . $start['uploadId'] . '/finish' ) )['assetId'];
+check( 'proof: upload kept under payments', 'payments' === pd_get_row( 'assets', $proof_asset )['category'] );
+check( 'proof: no generic upload alert', 0 === (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . pd_table( 'notifications' ) . " WHERE title LIKE 'New upload%'" ) );
+as_user( $client_u->ID );
+check( 'proof: other client cannot send proof', 404 === call( 'POST', '/payments/' . $dep['id'] . '/proof', array( 'assetId' => $proof_asset ) )->get_status() );
+as_user( $pat->ID );
+check( 'proof: client sends proof', 200 === call( 'POST', '/payments/' . $dep['id'] . '/proof', array( 'assetId' => $proof_asset, 'note' => 'Ref 123' ) )->get_status() );
+check( 'proof: team alerted', (bool) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . pd_table( 'notifications' ) . " WHERE audience = 'staff' AND title LIKE 'Payment proof to confirm%'" ) );
+$pp_portal = data( call( 'GET', '/portal' ) );
+check( 'proof: shows as sent', $pp_portal['projects'][0]['payments'][0]['proofAt'] && $proof_asset === $pp_portal['projects'][0]['payments'][0]['proofAssetId'] );
+check( 'proof: client cannot mark paid', 403 === call( 'PATCH', '/payments/' . $dep['id'], array( 'status' => 'paid' ) )->get_status() );
+as_user( $owner );
+call( 'PATCH', '/payments/' . $dep['id'], array( 'status' => 'paid' ) );
+check( 'billing: confirming deposit starts work once signed', 'paid' === pd_get_row( 'payments', (int) $dep['id'] )['status'] && pd_work_unlocked( (int) $pp['projectId'] ) );
+check( 'billing: confirming twice does nothing', false === pd_mark_payment_paid( (int) $dep['id'] ) );
+
+/* InvoiceNaija, with a stand-in for the plugin's classes. */
+if ( ! class_exists( 'INAIJA_Invoices' ) ) {
+	class INAIJA_Settings {
+		public static function get() {
+			return array( 'invoice' => array( 'vatEnabled' => true, 'vatRate' => 7.5 ) );
+		}
+	}
+	class INAIJA_DB {
+		public static $docs = array();
+		public static function get( $id, $type ) {
+			return self::$docs[ $id ] ?? null;
+		}
+	}
+	class INAIJA_Util {
+		public static function totals( $inv ) {
+			$sub   = 0;
+			foreach ( $inv['items'] as $it ) {
+				$sub += $it['qty'] * $it['unitPrice'];
+			}
+			$total = round( $sub * ( 1 + ( ! empty( $inv['vat']['enabled'] ) ? $inv['vat']['rate'] / 100 : 0 ) ), 2 );
+			$paid  = array_sum( array_column( $inv['payments'] ?? array(), 'amount' ) );
+			return array( 'total' => $total, 'paid' => $paid, 'balance' => round( $total - $paid, 2 ) );
+		}
+	}
+	class INAIJA_Invoices {
+		public static function save( $raw ) {
+			$raw['publicUrl']           = 'https://example.test/invoice/' . $raw['id'];
+			$raw['payments']            = array();
+			$raw['status']              = 'sent';
+			INAIJA_DB::$docs[ $raw['id'] ] = $raw;
+			return $raw;
+		}
+		public static function record_payment( $id, $payload, $source = 'manual' ) {
+			$inv               = INAIJA_DB::$docs[ $id ];
+			$inv['payments'][] = array( 'amount' => $payload['amount'], 'method' => $payload['method'] ?? 'bank_transfer' );
+			$inv['status']     = INAIJA_Util::totals( $inv )['balance'] <= 0 ? 'paid' : 'part-paid';
+			$GLOBALS['inaija_recorded'][] = array( $id, $source );
+			INAIJA_DB::$docs[ $id ] = $inv;
+			do_action( 'invoicenaija_payment_recorded', $inv, array(), end( $inv['payments'] ) );
+			return array( $inv, array() );
+		}
+	}
+	class INAIJA_Mailer {
+		public static function send_invoice( $inv ) {
+			$GLOBALS['inaija_sent'][] = $inv['id'];
+			return array( 'sent' => true, 'message' => 'ok' );
+		}
+	}
+}
+$GLOBALS['inaija_sent']     = array();
+$GLOBALS['inaija_recorded'] = array();
+check( 'invoicenaija: detected', pd_invoicenaija_active() );
+$r = data( call( 'POST', '/clients', array( 'company' => 'Naija Co', 'contactName' => 'Ngozi', 'email' => 'ngozi@naija.test', 'service' => 'website', 'price' => '200000', 'depositPercent' => 40 ) ) );
+$ngozi = get_user_by( 'email', 'ngozi@naija.test' );
+as_user( $ngozi->ID );
+$GLOBALS['pd_mail'] = array();
+call( 'POST', '/documents/' . $r['documentId'] . '/sign', array( 'name' => 'Ngozi', 'signature' => $sig, 'agree' => true ) );
+$nd = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit'", $r['projectId'] ), ARRAY_A );
+check( 'invoicenaija: deposit raised there and emailed by it', $nd && $nd['external_ref'] && $GLOBALS['inaija_sent'] === array( $nd['external_ref'] ) && 'https://example.test/invoice/' . $nd['external_ref'] === $nd['external_url'] );
+check( 'invoicenaija: amount matches its total with VAT', 8600000 === (int) $nd['amount'], $nd['amount'] );
+$m = last_mail_to( 'ngozi@naija.test' );
+check( 'invoicenaija: no second invoice email from the portal', ! $m || false === strpos( $m['subject'], 'New invoice' ) );
+INAIJA_Invoices::record_payment( $nd['external_ref'], array( 'amount' => 86000 ), 'bank_proof' );
+check( 'invoicenaija: paid there marks it paid here and starts work', 'paid' === pd_get_row( 'payments', (int) $nd['id'] )['status'] && pd_work_unlocked( (int) $r['projectId'] ) );
+as_user( $owner );
+$extra = data( call( 'POST', '/projects/' . $r['projectId'] . '/payments', array( 'label' => 'Balance', 'amount' => '120000', 'kind' => 'balance' ) ) );
+$ex    = pd_get_row( 'payments', (int) $extra['paymentId'] );
+call( 'PATCH', '/payments/' . $extra['paymentId'], array( 'status' => 'paid' ) );
+check( 'invoicenaija: confirming here records it there once', 'paid' === pd_get_row( 'payments', (int) $ex['id'] )['status'] && 1 === count( array_filter( $GLOBALS['inaija_recorded'], static fn( $x ) => $x[0] === $ex['external_ref'] ) ) && 'paid' === INAIJA_DB::$docs[ $ex['external_ref'] ]['status'] );
+add_filter( 'pd_use_invoicenaija', '__return_false' );
+
 /* ------------------------------------------------------------ app shell */
 
 $saved = pd_settings();

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { ago, api, boot, currentPhase, date, money, type Asset, type Doc, type Phase, type PortalData, type Project } from './api'
+import { ago, api, boot, currentPhase, date, money, type Asset, type Doc, type Payment, type Phase, type PortalData, type Project } from './api'
 import { go, type Route } from './router'
-import { AssetRow, AssetSheet, DocumentSheet, PaymentRow, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
+import { AssetRow, AssetSheet, ClientPaymentCard, DocumentSheet, ProofSheet, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
 import { BrandMark, Button, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skeleton, toast, useScrolled, useTheme } from './ui'
 
 type Sheets =
@@ -11,6 +11,7 @@ type Sheets =
   | { kind: 'approve'; phase: Phase; project: Project }
   | { kind: 'review'; project: Project }
   | { kind: 'notices' }
+  | { kind: 'proof'; payment: Payment; project: number }
   | null
 
 /** Things waiting on the client, most urgent first. */
@@ -24,8 +25,8 @@ function todo(data: PortalData) {
         items.push({ key: `a${ph.id}`, icon: 'check', tone: 'warn', title: `Approve: ${ph.name}`, sub: p.name, act: () => open({ kind: 'approve', phase: ph, project: p }) })
       for (const a of p.assets.filter((x) => x.status === 'changes_requested' && !p.assets.some((n) => n.versionOf === x.id)))
         items.push({ key: `f${a.id}`, icon: 'alert', tone: 'bad', title: `Changes needed: ${a.name}`, sub: a.reviewNote, act: () => open({ kind: 'asset', asset: a }) })
-      for (const pay of p.payments.filter((x) => x.status === 'due' || x.status === 'overdue'))
-        items.push({ key: `p${pay.id}`, icon: 'wallet', tone: pay.status === 'overdue' ? 'bad' : '', title: `${pay.label}: ${money(pay.amount, pay.currency)}`, sub: pay.status === 'overdue' ? `Overdue since ${date(pay.dueDate)}` : pay.dueDate ? `Due ${date(pay.dueDate)}` : 'Due', act: () => go('payments') })
+      for (const pay of p.payments.filter((x) => (x.status === 'due' || x.status === 'overdue') && !x.proofAt))
+        items.push({ key: `p${pay.id}`, icon: 'wallet', tone: pay.status === 'overdue' ? 'bad' : '', title: `Pay: ${pay.label}, ${money(pay.amount, pay.currency)}`, sub: (pay.status === 'overdue' ? `Overdue since ${date(pay.dueDate)}` : pay.dueDate ? `Due ${date(pay.dueDate)}` : 'Due') + ' · then send your proof', act: () => go('payments') })
     }
     return items
   } }
@@ -104,7 +105,7 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
       </div>
     )
   } else if (section === 'payments') {
-    const all = data.projects.flatMap((p) => p.payments.map((pay) => ({ ...pay, project: p.name })))
+    const all = data.projects.flatMap((p) => p.payments.map((pay) => ({ ...pay, project: p.name, projectId: p.id })))
     const outstanding = all.filter((p) => p.status === 'due' || p.status === 'overdue').reduce((s, p) => s + p.amount, 0)
     const paid = all.filter((p) => p.status === 'paid').reduce((s, p) => s + p.amount, 0)
     body = (
@@ -112,12 +113,18 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
         <header className="page-head">
           <span className="eyebrow">Payments</span>
           <h1>{outstanding ? `${money(outstanding)} to pay` : 'All paid up'}</h1>
-          <p className="muted">{money(paid)} paid so far. Receipts arrive by email when a payment is confirmed.</p>
+          <p className="muted">{money(paid)} paid so far. Pay by transfer, send us your proof here, and your receipt arrives by email once we confirm it.</p>
         </header>
         <div className="list stagger">
           {all.length === 0 && <Empty icon="wallet">No invoices yet.</Empty>}
           {all.map((p) => (
-            <PaymentRow key={p.id} p={p} />
+            <ClientPaymentCard
+              key={p.id}
+              p={p}
+              project={data.projects.length > 1 ? p.project : undefined}
+              canAct={!preview}
+              onProof={() => setSheet({ kind: 'proof', payment: p, project: p.projectId })}
+            />
           ))}
         </div>
       </div>
@@ -266,6 +273,7 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
       )}
       {sheet?.kind === 'doc' && <DocumentSheet doc={sheet.doc} canSign={!preview} onClose={() => setSheet(null)} onSigned={reload} />}
       {sheet?.kind === 'approve' && <ApproveSheet phase={sheet.phase} project={sheet.project} onClose={() => setSheet(null)} onApprove={approve} preview={preview} />}
+      {sheet?.kind === 'proof' && <ProofSheet payment={sheet.payment} projectId={sheet.project} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'review' && <ReviewSheet project={sheet.project} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'notices' && (
         <Sheet title="Notifications" onClose={() => setSheet(null)}>
