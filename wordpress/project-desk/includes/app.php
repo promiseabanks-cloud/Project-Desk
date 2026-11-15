@@ -130,6 +130,11 @@ function pd_serve_app(): void {
 	if ( null === $route ) {
 		return;
 	}
+	// The portal is per-user (and carries a nonce), so page caches such as LiteSpeed must never keep it.
+	if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+		define( 'DONOTCACHEPAGE', true );
+	}
+	do_action( 'litespeed_control_set_nocache', 'Project Desk portal' );
 	status_header( 200 );
 	header( 'X-Content-Type-Options: nosniff' );
 	header( 'Referrer-Policy: same-origin' );
