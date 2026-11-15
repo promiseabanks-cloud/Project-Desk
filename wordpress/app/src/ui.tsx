@@ -49,7 +49,7 @@ export function Icon({ name, className }: { name: keyof typeof paths | string; c
 export function BrandMark() {
   const b = boot.brand
   return (
-    <span className="brandmark">
+    <span className="brandmark" role="img" aria-label={b.businessName} title={b.businessName}>
       {b.logoUrl ? (
         <img src={b.logoUrl} alt="" />
       ) : (
@@ -59,7 +59,6 @@ export function BrandMark() {
           <circle cx="83" cy="51" r="6.5" fill="#F5B72E" />
         </svg>
       )}
-      <span>{b.businessName}</span>
     </span>
   )
 }
