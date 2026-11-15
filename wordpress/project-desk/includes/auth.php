@@ -237,3 +237,26 @@ function pd_google_login( string $credential ) {
 	pd_sign_in( $user );
 	return $user;
 }
+
+/**
+ * Sign-in routes are for signed-out people, so a leftover nonce from an ended session must not
+ * block them. WordPress answers such a request with "Cookie check failed"; for these routes we
+ * treat the request as signed out instead and let the sign-in go ahead.
+ *
+ * @param WP_Error|null|true $result Result so far.
+ * @return WP_Error|null|true
+ */
+function pd_allow_stale_nonce_on_sign_in( $result, ?string $route = null ) {
+	if ( ! is_wp_error( $result ) || 'rest_cookie_invalid_nonce' !== $result->get_error_code() ) {
+		return $result;
+	}
+	if ( null === $route ) {
+		$route = isset( $GLOBALS['wp']->query_vars['rest_route'] ) ? (string) $GLOBALS['wp']->query_vars['rest_route'] : '';
+	}
+	$public = array( 'login', 'magic-link', 'magic', 'google', 'accept-invite' );
+	if ( ! preg_match( '#^/' . preg_quote( PD_NS, '#' ) . '/auth/([a-z-]+)/?$#', $route, $m ) || ! in_array( $m[1], $public, true ) ) {
+		return $result;
+	}
+	wp_set_current_user( 0 );
+	return null;
+}

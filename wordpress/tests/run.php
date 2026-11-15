@@ -434,6 +434,10 @@ check( 'invoicenaija: VAT added when switched on', 12900000 === (int) $ex['amoun
 pd_update_settings( array( 'invoiceVat' => false ) );
 add_filter( 'pd_use_invoicenaija', '__return_false' );
 
+$stale = new WP_Error( 'rest_cookie_invalid_nonce', 'Cookie check failed', array( 'status' => 403 ) );
+check( 'sign-in: stale nonce does not block login', null === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/auth/login' ) && 0 === get_current_user_id() );
+check( 'sign-in: stale nonce still blocks other routes', $stale === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/console' ) && $stale === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/auth/logout' ) );
+
 /* ------------------------------------------------------------ app shell */
 
 $saved = pd_settings();

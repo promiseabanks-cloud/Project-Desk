@@ -194,7 +194,9 @@ export async function api<T>(
   options: { method?: string; body?: unknown; raw?: BodyInit; query?: Record<string, string | number> } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {}
-  if (nonce) headers['X-WP-Nonce'] = nonce
+  // Sign-in calls are made signed out; a nonce left from an ended session would only get them refused.
+  const signIn = /^\/auth\/(login|magic-link|magic|google|accept-invite)$/.test(path)
+  if (nonce && !signIn) headers['X-WP-Nonce'] = nonce
   let body: BodyInit | undefined
   if (options.raw !== undefined) {
     headers['Content-Type'] = 'application/octet-stream'
