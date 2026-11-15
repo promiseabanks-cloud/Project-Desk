@@ -144,6 +144,7 @@ function pd_settings(): array {
 		'deposit_percent'   => 50,
 		'invoice_due_days'  => 7,
 		'bank_details'      => '',
+		'invoice_vat'       => false,
 		'legal_name'        => pd_theme_detail( 'legal' ),
 		'rc_number'         => pd_theme_detail( 'rc' ),
 		'business_email'    => pd_theme_detail( 'email' ) ? pd_theme_detail( 'email' ) : get_option( 'admin_email' ),
@@ -237,6 +238,9 @@ function pd_update_settings( array $input ) {
 	}
 	if ( isset( $input['invoiceDueDays'] ) ) {
 		$s['invoice_due_days'] = max( 0, min( 90, (int) $input['invoiceDueDays'] ) );
+	}
+	if ( isset( $input['invoiceVat'] ) ) {
+		$s['invoice_vat'] = (bool) $input['invoiceVat'];
 	}
 	if ( isset( $input['bankDetails'] ) ) {
 		$s['bank_details'] = pd_textarea( $input['bankDetails'], 2000 );
