@@ -30,6 +30,7 @@ export type Phase = {
   position: number
   stage: 'opening' | 'work'
   signoff: boolean
+  billPercent: number
   status: 'queued' | 'ongoing' | 'completed'
   note: string
   approvedAt: string | null
@@ -71,6 +72,7 @@ export type Payment = {
   proofAt: string | null
   proofAssetId: number | null
   proofNote: string
+  phaseId: number | null
 }
 
 export type Message = { id: number; authorRole: 'staff' | 'client'; authorName: string; body: string; createdAt: string }

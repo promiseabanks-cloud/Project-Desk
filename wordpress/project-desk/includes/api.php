@@ -213,7 +213,7 @@ function pd_register_routes(): void {
 				return pd_error( 'Choose a client and name the project.' );
 			}
 			[ $price, $pct ] = pd_price_input( $b );
-			$id              = pd_create_project( (int) $client['id'], $name, sanitize_key( (string) ( $b['service'] ?? '' ) ), pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ), null, $price, $pct );
+			$id              = pd_create_project( (int) $client['id'], $name, sanitize_key( (string) ( $b['service'] ?? '' ) ), pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ), null, $price, $pct, pd_milestones_input( $b ) );
 			if ( is_wp_error( $id ) ) {
 				return $id;
 			}
@@ -318,9 +318,32 @@ function pd_register_routes(): void {
 		'/phases/(?P<id>\d+)',
 		'PATCH',
 		static function ( WP_REST_Request $r ) {
-			$b        = pd_json_body( $r );
-			$override = ! empty( $b['override'] ) && current_user_can( 'pd_override_gates' );
-			return pd_set_phase_status( (int) $r['id'], (string) ( $b['status'] ?? '' ), pd_textarea( $b['note'] ?? '', 2000 ), $override );
+			global $wpdb;
+			$b     = pd_json_body( $r );
+			$phase = pd_get_row( 'phases', (int) $r['id'] );
+			if ( ! $phase ) {
+				return pd_error( 'Phase not found.', 404 );
+			}
+			// Editing the phase itself (name, sign-off, payment milestone).
+			$fields = array();
+			if ( isset( $b['name'] ) && pd_text( $b['name'], 160 ) ) {
+				$fields['name'] = pd_text( $b['name'], 160 );
+			}
+			if ( array_key_exists( 'signoff', $b ) ) {
+				$fields['signoff'] = ! empty( $b['signoff'] ) ? 1 : 0;
+			}
+			if ( array_key_exists( 'billPercent', $b ) && current_user_can( 'pd_manage_money' ) ) {
+				$fields['bill_percent'] = max( 0, min( 100, (int) $b['billPercent'] ) );
+			}
+			if ( $fields ) {
+				$wpdb->update( pd_table( 'phases' ), $fields, array( 'id' => $phase['id'] ) );
+			}
+			// Changing the phase's status, when asked.
+			if ( isset( $b['status'] ) && '' !== $b['status'] ) {
+				$override = ! empty( $b['override'] ) && current_user_can( 'pd_override_gates' );
+				return pd_set_phase_status( (int) $r['id'], (string) $b['status'], pd_textarea( $b['note'] ?? '', 2000 ), $override );
+			}
+			return array( 'ok' => true );
 		},
 		'pd_can_staff'
 	);

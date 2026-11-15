@@ -366,12 +366,15 @@ export function Timeline({
   mode,
   onApprove,
   onSet,
+  onBill,
 }: {
   project: Project
   mode: 'client' | 'staff' | 'preview'
   onApprove?: (phase: Phase) => void
   onSet?: (phase: Phase, status: Phase['status']) => void
+  onBill?: (phase: Phase, percent: number) => void
 }) {
+  const canMoney = Boolean(boot.can?.money)
   return (
     <div className="timeline stagger">
       {project.phases.map((ph) => (
@@ -380,13 +383,37 @@ export function Timeline({
           <div className="step-body">
             <div className="between" style={{ alignItems: 'flex-start' }}>
               <span className="name">{ph.name}</span>
-              {ph.status === 'ongoing' && <Pill tone="live">Now</Pill>}
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {ph.billPercent > 0 && (
+                  <Pill tone="warn">{mode === 'staff' ? `Bills ${ph.billPercent}%` : project.price > 0 ? `Payment: ${money(Math.round((project.price * ph.billPercent) / 100))}` : `Payment: ${ph.billPercent}%`}</Pill>
+                )}
+                {ph.status === 'ongoing' && <Pill tone="live">Now</Pill>}
+              </span>
             </div>
             <div className="muted" style={{ fontSize: '.84rem' }}>
               {ph.status === 'completed' && ph.completedAt ? `Done ${date(ph.completedAt)}` : ph.status === 'ongoing' && ph.startedAt ? `Started ${date(ph.startedAt)}` : ph.stage === 'opening' ? 'Getting started' : 'Up next'}
               {ph.signoff && (ph.approvedAt ? ' · Approved by you' : ' · Needs your approval')}
+              {mode === 'client' && ph.billPercent > 0 && ' · Payment due when this phase is done'}
             </div>
             {ph.note && <p style={{ marginTop: 6, fontSize: '.92rem' }}>{ph.note}</p>}
+            {mode === 'staff' && canMoney && onBill && ph.stage === 'work' && (
+              <label className="bill-edit">
+                <span>Payment milestone</span>
+                <span className="ms-input">
+                  <input
+                    inputMode="numeric"
+                    defaultValue={ph.billPercent || ''}
+                    placeholder="0"
+                    aria-label={`Payment percent for ${ph.name}`}
+                    onBlur={(e) => {
+                      const v = Math.max(0, Math.min(100, Number(e.target.value.replace(/[^0-9]/g, '')) || 0))
+                      if (v !== ph.billPercent) onBill(ph, v)
+                    }}
+                  />
+                  <i>%</i>
+                </span>
+              </label>
+            )}
             {mode === 'client' && ph.signoff && ph.status === 'ongoing' && !ph.approvedAt && onApprove && (
               <div className="step-actions">
                 <Button variant="accent small" icon="check" onClick={() => onApprove(ph)}>

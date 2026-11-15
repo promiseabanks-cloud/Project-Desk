@@ -150,6 +150,7 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 						'position'     => (int) $x['position'],
 						'stage'        => $x['stage'],
 						'signoff'      => (bool) $x['signoff'],
+						'billPercent'  => (int) $x['bill_percent'],
 						'status'       => $x['status'],
 						'note'         => (string) $x['note'],
 						'approvedAt'   => pd_iso( $x['approved_at'] ),
@@ -175,6 +176,7 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 						'proofAt'      => pd_iso( $x['proof_at'] ),
 						'proofAssetId' => $x['proof_asset_id'] ? (int) $x['proof_asset_id'] : null,
 						'proofNote'    => (string) $x['proof_note'],
+						'phaseId'      => $x['phase_id'] ? (int) $x['phase_id'] : null,
 					),
 					$payments[ $pid ] ?? array()
 				),
@@ -232,7 +234,7 @@ function pd_load_notifications( string $audience, int $client_id = 0, int $limit
 /* --------------------------------------------------------------- onboarding */
 
 /** Creates a project with the opening phases and the service's work phases. */
-function pd_create_project( int $client_id, string $name, string $service, string $summary = '', ?string $due = null, ?int $manager_id = null, int $price = 0, ?int $deposit_percent = null ) {
+function pd_create_project( int $client_id, string $name, string $service, string $summary = '', ?string $due = null, ?int $manager_id = null, int $price = 0, ?int $deposit_percent = null, array $bills = array() ) {
 	global $wpdb;
 	$services = pd_settings()['services'];
 	if ( ! isset( $services[ $service ] ) ) {
@@ -256,11 +258,18 @@ function pd_create_project( int $client_id, string $name, string $service, strin
 		)
 	);
 	$project_id = (int) $wpdb->insert_id;
+	$open_count = count( pd_opening_phases() );
 	$phases     = array_merge(
 		pd_opening_phases(),
 		array_map( static fn( $p ) => $p + array( 'stage' => 'work' ), $services[ $service ]['phases'] )
 	);
 	foreach ( $phases as $i => $p ) {
+		if ( 'work' === ( $p['stage'] ?? '' ) ) {
+			$work_index = $i - $open_count;
+			if ( isset( $bills[ $work_index ] ) ) {
+				$p['bill'] = max( 0, min( 100, (int) $bills[ $work_index ] ) );
+			}
+		}
 		$wpdb->insert(
 			pd_table( 'phases' ),
 			array(
@@ -269,6 +278,7 @@ function pd_create_project( int $client_id, string $name, string $service, strin
 				'position'   => $i,
 				'stage'      => $p['stage'],
 				'signoff'    => ! empty( $p['signoff'] ) ? 1 : 0,
+				'bill_percent' => isset( $p['bill'] ) ? max( 0, min( 100, (int) $p['bill'] ) ) : 0,
 				'status'     => 0 === $i ? 'completed' : ( 1 === $i ? 'ongoing' : 'queued' ),
 				'started_at' => $i < 2 ? pd_now() : null,
 				'completed_at' => 0 === $i ? pd_now() : null,
@@ -291,6 +301,24 @@ function pd_price_input( array $in ): array {
 	$price = isset( $in['price'] ) && '' !== $in['price'] ? (int) pd_money( $in['price'] ) : 0;
 	$pct   = isset( $in['depositPercent'] ) && '' !== $in['depositPercent'] ? max( 0, min( 100, (int) $in['depositPercent'] ) ) : null;
 	return array( $price, $pct );
+}
+
+/**
+ * Payment-milestone percentages from a form, as work-phase index => percent (1-100). Only people
+ * who manage money may set them; the key is the phase's position within the service's work phases.
+ */
+function pd_milestones_input( array $in ): array {
+	if ( ! current_user_can( 'pd_manage_money' ) || empty( $in['milestones'] ) || ! is_array( $in['milestones'] ) ) {
+		return array();
+	}
+	$out = array();
+	foreach ( $in['milestones'] as $index => $percent ) {
+		$pct = max( 0, min( 100, (int) $percent ) );
+		if ( $pct > 0 ) {
+			$out[ (int) $index ] = $pct;
+		}
+	}
+	return $out;
 }
 
 /** Creates an agreement awaiting signature. */
@@ -362,7 +390,8 @@ function pd_onboard_client( array $in ) {
 	$label      = $svcs[ $service ]['label'];
 	$name       = pd_text( $in['projectName'] ?? '', 160 ) ?: $company . ' — ' . $label;
 	[ $price, $pct ] = pd_price_input( $in );
-	$project_id      = pd_create_project( $client_id, $name, $service, pd_textarea( $in['summary'] ?? '', 2000 ), pd_date( $in['dueDate'] ?? '' ), null, $price, $pct );
+	$bills           = pd_milestones_input( $in );
+	$project_id      = pd_create_project( $client_id, $name, $service, pd_textarea( $in['summary'] ?? '', 2000 ), pd_date( $in['dueDate'] ?? '' ), null, $price, $pct, $bills );
 	$pct             = (int) pd_get_row( 'projects', $project_id )['deposit_percent'];
 	$doc_id          = pd_create_document( $client_id, $project_id, 'Service agreement — ' . $label, pd_agreement_text( $company, $label, $price, $pct ) );
 
@@ -464,6 +493,12 @@ function pd_set_phase_status( int $phase_id, string $status, string $note, bool 
 	if ( 'queued' !== $status && 'work' === $phase['stage'] && ! pd_work_unlocked( $project_id ) && ! $override ) {
 		return pd_error( 'Work starts once the agreement is signed and the deposit is paid.', 409, 'pd_gate_unpaid' );
 	}
+	if ( 'queued' !== $status && 'work' === $phase['stage'] && ! $override ) {
+		$milestone = pd_milestone_blocks_phase( $project_id, (int) $phase['position'] );
+		if ( $milestone ) {
+			return pd_error( sprintf( 'The invoice for "%s" must be paid before this phase can go ahead.', $milestone ), 409, 'pd_gate_unpaid' );
+		}
+	}
 	if ( 'completed' === $status && $phase['signoff'] && ! $phase['approved_at'] && ! $override ) {
 		return pd_error( 'This phase needs the client\'s approval before it can be completed.', 409, 'pd_gate_signoff' );
 	}
@@ -496,12 +531,14 @@ function pd_set_phase_status( int $phase_id, string $status, string $note, bool 
 	}
 	$wpdb->update( $t, $fields, array( 'id' => $phase_id ) );
 
-	// When a phase completes and nothing is in progress, start the next one automatically.
+	// When a phase completes, raise any milestone invoices now due, then start the next phase
+	// automatically unless it is held behind an unpaid milestone.
 	if ( 'completed' === $status ) {
+		pd_bill_completed_milestones( $project_id );
 		$ongoing = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$t} WHERE project_id = %d AND status = 'ongoing'", $project_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		if ( ! $ongoing ) {
 			$next = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$t} WHERE project_id = %d AND position > %d AND status = 'queued' ORDER BY position ASC LIMIT 1", $project_id, $phase['position'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-			if ( $next ) {
+			if ( $next && ! pd_milestone_blocks_phase( $project_id, (int) $next['position'] ) ) {
 				$wpdb->update( $t, array( 'status' => 'ongoing', 'started_at' => $now ), array( 'id' => $next['id'] ) );
 			}
 		}

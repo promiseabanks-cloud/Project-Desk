@@ -55,6 +55,7 @@ function pd_schema(): array {
 			position int(11) NOT NULL DEFAULT 0,
 			stage varchar(20) NOT NULL DEFAULT 'work',
 			signoff tinyint(1) NOT NULL DEFAULT 0,
+			bill_percent tinyint(3) unsigned NOT NULL DEFAULT 0,
 			status varchar(20) NOT NULL DEFAULT 'queued',
 			note text NULL,
 			approved_at datetime NULL,
@@ -124,6 +125,8 @@ function pd_schema(): array {
 			proof_asset_id bigint(20) unsigned NULL,
 			proof_note text NULL,
 			proof_at datetime NULL,
+			phase_id bigint(20) unsigned NULL,
+			reminder_stage tinyint(3) unsigned NOT NULL DEFAULT 0,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			KEY project_id (project_id)
@@ -202,6 +205,9 @@ function pd_activate(): void {
 	if ( ! wp_next_scheduled( 'pd_cleanup' ) ) {
 		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'pd_cleanup' );
 	}
+	if ( ! wp_next_scheduled( 'pd_billing_reminders' ) ) {
+		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'pd_billing_reminders' );
+	}
 }
 
 function pd_install(): void {
@@ -217,5 +223,8 @@ function pd_install(): void {
 function pd_maybe_upgrade(): void {
 	if ( (int) get_option( 'pd_db_version', 0 ) < PD_DB_VERSION ) {
 		pd_install();
+	}
+	if ( ! wp_next_scheduled( 'pd_billing_reminders' ) ) {
+		wp_schedule_event( time() + HOUR_IN_SECONDS, 'daily', 'pd_billing_reminders' );
 	}
 }
