@@ -15,8 +15,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'PD_VERSION', '0.3.0' );
-define( 'PD_DB_VERSION', 2 );
+define( 'PD_VERSION', '0.4.0' );
+define( 'PD_DB_VERSION', 3 );
 define( 'PD_FILE', __FILE__ );
 define( 'PD_DIR', __DIR__ );
 
@@ -36,6 +36,7 @@ register_activation_hook( __FILE__, 'pd_activate' );
 add_action( 'plugins_loaded', 'pd_maybe_upgrade' );
 add_action( 'rest_api_init', 'pd_register_routes' );
 add_action( 'pd_cleanup', 'pd_cleanup_stale_uploads' );
+add_action( 'pd_billing_reminders', 'pd_send_billing_reminders' );
 add_action( 'template_redirect', 'pd_serve_app', 0 );
 add_filter( 'rest_authentication_errors', 'pd_allow_stale_nonce_on_sign_in', 200 );
 add_action( 'invoicenaija_payment_recorded', 'pd_on_invoicenaija_payment', 10, 3 );

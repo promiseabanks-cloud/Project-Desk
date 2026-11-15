@@ -438,6 +438,57 @@ $stale = new WP_Error( 'rest_cookie_invalid_nonce', 'Cookie check failed', array
 check( 'sign-in: stale nonce does not block login', null === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/auth/login' ) && 0 === get_current_user_id() );
 check( 'sign-in: stale nonce still blocks other routes', $stale === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/console' ) && $stale === pd_allow_stale_nonce_on_sign_in( $stale, '/project-desk/v1/auth/logout' ) );
 
+/* ------------------------------------------------------- payment milestones */
+
+as_user( $owner );
+pd_update_settings( array( 'invoiceVat' => false, 'bankDetails' => "Providus Bank\n1307238590" ) );
+$ms = data( call( 'POST', '/clients', array( 'company' => 'Milestone Co', 'contactName' => 'Mo', 'email' => 'mo@ms.test', 'service' => 'website', 'price' => '2,000,000', 'depositPercent' => 60, 'milestones' => array( '0' => 20, '7' => 20 ) ) ) );
+$ms_pid  = (int) $ms['projectId'];
+$wph     = $wpdb->get_results( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'phases' ) . " WHERE project_id = %d AND stage = 'work' ORDER BY position ASC", $ms_pid ), ARRAY_A );
+check( 'milestones: percent saved on the chosen phases only', 20 === (int) $wph[0]['bill_percent'] && 20 === (int) $wph[7]['bill_percent'] && 0 === (int) $wph[1]['bill_percent'] );
+
+$mo = get_user_by( 'email', 'mo@ms.test' );
+as_user( $mo->ID );
+call( 'POST', '/documents/' . $ms['documentId'] . '/sign', array( 'name' => 'Mo', 'signature' => $sig, 'agree' => true ) );
+$dep = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit'", $ms_pid ), ARRAY_A );
+check( 'milestones: 60% deposit invoice raised on signing', $dep && 120000000 === (int) $dep['amount'] );
+
+as_user( $owner );
+call( 'PATCH', '/payments/' . $dep['id'], array( 'status' => 'paid' ) );
+$first = pd_get_row( 'phases', (int) $wph[0]['id'] );
+check( 'milestones: first work phase starts after deposit', 'ongoing' === $first['status'] );
+
+$GLOBALS['pd_mail'] = array();
+$wpdb->query( 'DELETE FROM ' . pd_table( 'notifications' ) . " WHERE title LIKE 'Invoice sent%'" );
+call( 'PATCH', '/phases/' . $wph[0]['id'], array( 'status' => 'completed' ) );
+$mil = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'payments' ) . ' WHERE phase_id = %d', (int) $wph[0]['id'] ), ARRAY_A );
+check( 'milestones: completing a milestone phase raises its 20% invoice', $mil && 40000000 === (int) $mil['amount'] && 'due' === $mil['status'] );
+check( 'milestones: team told the invoice went out', (bool) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . pd_table( 'notifications' ) . " WHERE audience = 'staff' AND title LIKE 'Invoice sent%'" ) );
+check( 'milestones: next phase held until the milestone is paid', 'queued' === pd_get_row( 'phases', (int) $wph[1]['id'] )['status'] );
+$blocked = call( 'PATCH', '/phases/' . $wph[1]['id'], array( 'status' => 'ongoing' ) );
+check( 'milestones: next phase cannot be started while unpaid', 409 === $blocked->get_status() && 'pd_gate_unpaid' === data( $blocked )['code'] );
+
+/* reminders for the unpaid milestone invoice */
+$GLOBALS['pd_mail'] = array();
+$wpdb->update( pd_table( 'payments' ), array( 'created_at' => gmdate( 'Y-m-d H:i:s', time() - 4 * DAY_IN_SECONDS ) ), array( 'id' => $mil['id'] ) );
+pd_send_billing_reminders( time() );
+$rem = last_mail_to( 'mo@ms.test' );
+check( 'reminders: a first reminder goes out after 3 days', $rem && false !== strpos( $rem['subject'], 'Reminder' ) && 1 === (int) pd_get_row( 'payments', (int) $mil['id'] )['reminder_stage'] );
+pd_send_billing_reminders( time() );
+check( 'reminders: no second reminder before 7 days', 1 === (int) pd_get_row( 'payments', (int) $mil['id'] )['reminder_stage'] );
+$GLOBALS['pd_mail'] = array();
+$wpdb->update( pd_table( 'payments' ), array( 'created_at' => gmdate( 'Y-m-d H:i:s', time() - 8 * DAY_IN_SECONDS ) ), array( 'id' => $mil['id'] ) );
+pd_send_billing_reminders( time() );
+$rem2 = last_mail_to( 'mo@ms.test' );
+check( 'reminders: a second reminder goes out after 7 days', $rem2 && false !== strpos( $rem2['subject'], 'Second reminder' ) && 2 === (int) pd_get_row( 'payments', (int) $mil['id'] )['reminder_stage'] );
+pd_send_billing_reminders( time() );
+check( 'reminders: no more than two reminders', 2 === (int) pd_get_row( 'payments', (int) $mil['id'] )['reminder_stage'] );
+
+/* paying the milestone advances the work */
+as_user( $owner );
+call( 'PATCH', '/payments/' . $mil['id'], array( 'status' => 'paid' ) );
+check( 'milestones: paying the milestone starts the next phase', 'ongoing' === pd_get_row( 'phases', (int) $wph[1]['id'] )['status'] );
+
 /* ------------------------------------------------------------ app shell */
 
 $saved = pd_settings();

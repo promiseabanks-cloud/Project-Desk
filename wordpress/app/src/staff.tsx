@@ -405,6 +405,15 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
       else toast('Not yet', (e as Error).message, 'bad')
     }
   }
+  const setBill = async (phase: Phase, percent: number) => {
+    try {
+      await api(`/phases/${phase.id}`, { method: 'PATCH', body: { billPercent: percent } })
+      toast(percent > 0 ? `${phase.name} bills ${percent}%` : `${phase.name} is no longer a payment milestone`, 'Saved.')
+      reload()
+    } catch (e) {
+      toast('Not saved', (e as Error).message, 'bad')
+    }
+  }
   const latest = project.assets.filter((a) => !project.assets.some((n) => n.versionOf === a.id))
   const phase = currentPhase(project)
   return (
@@ -528,7 +537,7 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
         <Thread key="messages" project={project} me="staff" onSent={reload} />
       ) : (
         <div key="plan">
-          <Timeline project={project} mode="staff" onSet={setPhase} />
+          <Timeline project={project} mode="staff" onSet={setPhase} onBill={can.money ? setBill : undefined} />
           <div className="gap" style={{ marginTop: 6 }}>
             <input className="input" placeholder="Add a phase" value={newPhase} onChange={(e) => setNewPhase(e.target.value)} />
             <Button
@@ -553,13 +562,14 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
 function OnboardSheet({ services, onClose, onDone }: { services: Record<string, ServiceDef>; onClose: () => void; onDone: (clientId: number) => void }) {
   const keys = Object.keys(services)
   const [f, setF] = useState({ company: '', contactName: '', email: '', phone: '', industry: '', service: keys[0] ?? 'website', projectName: '', dueDate: '', notes: '', price: '', depositPercent: String(boot.brand.depositPercent ?? 50) })
+  const [milestones, setMilestones] = useState<Record<number, string>>({})
   const [error, setError] = useState('')
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
   const svc = services[f.service]
   const submit = async () => {
     setError('')
     try {
-      const r = await api<{ clientId: number }>('/clients', { body: f })
+      const r = await api<{ clientId: number }>('/clients', { body: { ...f, milestones } })
       toast(`${f.company} is onboarded`, `Invite and agreement sent to ${f.email}.`)
       onClose()
       onDone(r.clientId)
@@ -591,7 +601,13 @@ function OnboardSheet({ services, onClose, onDone }: { services: Record<string, 
         </Field>
       </div>
       <Field label="Service">
-        <select value={f.service} onChange={set('service')}>
+        <select
+          value={f.service}
+          onChange={(e) => {
+            setF({ ...f, service: e.target.value })
+            setMilestones({})
+          }}
+        >
           {keys.map((k) => (
             <option key={k} value={k}>
               {services[k].label}
@@ -623,6 +639,7 @@ function OnboardSheet({ services, onClose, onDone }: { services: Record<string, 
         </Field>
       </div>
       {can.money && <PriceFields price={f.price} pct={f.depositPercent} onChange={(price, depositPercent) => setF({ ...f, price, depositPercent })} />}
+      {can.money && svc && naira(f.price) > 0 && <MilestonePlanner phases={svc.phases} price={f.price} deposit={f.depositPercent} milestones={milestones} onChange={setMilestones} />}
       <Field label="Notes (only your team sees these)">
         <textarea value={f.notes} onChange={set('notes')} />
       </Field>
@@ -662,6 +679,66 @@ function PriceFields({ price, pct, onChange }: { price: string; pct: string; onC
   )
 }
 
+/** A percentage 0-100 from a typed string. */
+const pctOf = (v: string) => Math.max(0, Math.min(100, Number(v) || 0))
+
+/** Lets the team mark which phases bill the client, and for how much, as a share of the price. */
+function MilestonePlanner({
+  phases,
+  price,
+  deposit,
+  milestones,
+  onChange,
+}: {
+  phases: { name: string; signoff: boolean }[]
+  price: string
+  deposit: string
+  milestones: Record<number, string>
+  onChange: (m: Record<number, string>) => void
+}) {
+  const amount = naira(price)
+  const dep = pctOf(deposit)
+  const sum = dep + phases.reduce((t, _p, i) => t + pctOf(milestones[i] ?? ''), 0)
+  return (
+    <div className="money-fields">
+      <div className="eyebrow" style={{ marginBottom: 6 }}>
+        Payment milestones
+      </div>
+      <p className="hint">The deposit is billed on signing. Put a % on any phase to bill it when that phase is completed — the next phase then waits until it is paid.</p>
+      <div className="milestones">
+        <div className="ms-row ms-fixed">
+          <span className="grow">Deposit — on signing</span>
+          <span className="ms-pct">{dep}%</span>
+          {amount > 0 && <span className="ms-amt">{money(Math.round(amount * dep))}</span>}
+        </div>
+        {phases.map((p, i) => {
+          const v = pctOf(milestones[i] ?? '')
+          return (
+            <div key={i} className="ms-row">
+              <span className="grow">{p.name}</span>
+              <span className="ms-input">
+                <input
+                  inputMode="numeric"
+                  value={milestones[i] ?? ''}
+                  placeholder="0"
+                  aria-label={`Payment for ${p.name}`}
+                  onChange={(e) => onChange({ ...milestones, [i]: e.target.value.replace(/[^0-9]/g, '').slice(0, 3) })}
+                />
+                <i>%</i>
+              </span>
+              <span className="ms-amt">{amount > 0 && v > 0 ? money(Math.round(amount * v)) : ''}</span>
+            </div>
+          )
+        })}
+      </div>
+      <p className={`hint ms-total ${sum === 100 ? 'ok' : 'warn'}`}>
+        {sum === 100 ? 'All ' : ''}
+        {sum}% of the price billed{sum < 100 ? ` — ${100 - sum}% not yet assigned` : sum > 100 ? ` — ${sum - 100}% over` : ''}
+      </p>
+    </div>
+  )
+}
+
 function NewProjectSheet({ client, services, onClose, onDone }: { client: Client; services: Record<string, ServiceDef>; onClose: () => void; onDone: (id: number) => void }) {
   const keys = Object.keys(services)
   const [name, setName] = useState('')
@@ -669,13 +746,21 @@ function NewProjectSheet({ client, services, onClose, onDone }: { client: Client
   const [dueDate, setDue] = useState('')
   const [price, setPrice] = useState('')
   const [pct, setPct] = useState(String(boot.brand.depositPercent ?? 50))
+  const [milestones, setMilestones] = useState<Record<number, string>>({})
+  const svc = services[service]
   return (
     <Sheet title={`New project for ${client.company}`} onClose={onClose}>
       <Field label="Name">
         <input value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Service">
-        <select value={service} onChange={(e) => setService(e.target.value)}>
+        <select
+          value={service}
+          onChange={(e) => {
+            setService(e.target.value)
+            setMilestones({})
+          }}
+        >
           {keys.map((k) => (
             <option key={k} value={k}>
               {services[k].label}
@@ -687,11 +772,12 @@ function NewProjectSheet({ client, services, onClose, onDone }: { client: Client
         <input type="date" value={dueDate} onChange={(e) => setDue(e.target.value)} />
       </Field>
       {can.money && <PriceFields price={price} pct={pct} onChange={(a, b) => (setPrice(a), setPct(b))} />}
+      {can.money && svc && naira(price) > 0 && <MilestonePlanner phases={svc.phases} price={price} deposit={pct} milestones={milestones} onChange={setMilestones} />}
       <Button
         variant="accent block"
         disabled={!name.trim()}
         onClick={async () => {
-          const r = await api<{ projectId: number }>('/projects', { body: { clientId: client.id, name, service, dueDate, ...(can.money ? { price, depositPercent: pct } : {}) } })
+          const r = await api<{ projectId: number }>('/projects', { body: { clientId: client.id, name, service, dueDate, ...(can.money ? { price, depositPercent: pct, milestones } : {}) } })
           toast('Project created')
           onClose()
           onDone(r.projectId)
