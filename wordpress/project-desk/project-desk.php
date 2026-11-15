@@ -37,4 +37,5 @@ add_action( 'plugins_loaded', 'pd_maybe_upgrade' );
 add_action( 'rest_api_init', 'pd_register_routes' );
 add_action( 'pd_cleanup', 'pd_cleanup_stale_uploads' );
 add_action( 'template_redirect', 'pd_serve_app', 0 );
+add_filter( 'rest_authentication_errors', 'pd_allow_stale_nonce_on_sign_in', 200 );
 add_action( 'invoicenaija_payment_recorded', 'pd_on_invoicenaija_payment', 10, 3 );
