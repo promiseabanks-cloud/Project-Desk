@@ -840,6 +840,7 @@ type SettingsData = {
   depositPercent: number
   invoiceDueDays: number
   bankDetails: string
+  invoiceVat: boolean
   invoiceNaija: boolean
 }
 
@@ -949,8 +950,12 @@ function SettingsView() {
             <div className="card" style={{ marginBottom: 18 }}>
               <strong>InvoiceNaija is connected.</strong>
               <p className="muted" style={{ margin: '6px 0 0' }}>
-                Invoices are raised and emailed by InvoiceNaija, with its bank accounts, VAT and pay page. Payments confirmed here are recorded there, and its receipt goes to the client.
+                Invoices are raised and emailed by InvoiceNaija, with its bank accounts and pay page. Payments confirmed here are recorded there, and its receipt goes to the client.
               </p>
+              <label className="check" style={{ marginTop: 12 }}>
+                <input type="checkbox" checked={s.invoiceVat} onChange={(e) => setS({ ...s, invoiceVat: e.target.checked })} />
+                <span>Add VAT to project invoices (at InvoiceNaija's rate)</span>
+              </label>
             </div>
           ) : (
             <Field label="Bank details for invoices" hint="Shown in invoice emails. Account name, bank and number.">
@@ -972,6 +977,7 @@ function SettingsView() {
                 depositPercent: s.depositPercent,
                 invoiceDueDays: s.invoiceDueDays,
                 bankDetails: s.bankDetails,
+                invoiceVat: s.invoiceVat,
               })
             }
           >

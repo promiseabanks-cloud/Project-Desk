@@ -148,7 +148,8 @@ function pd_invoicenaija_raise( array $payment, ?array $project, ?array $client 
 					),
 				),
 				'vat'       => array(
-					'enabled' => array_key_exists( 'vatEnabled', $inv ) ? ! empty( $inv['vatEnabled'] ) : true,
+					// Project invoices carry no VAT unless the setting turns it on.
+					'enabled' => ! empty( pd_settings()['invoice_vat'] ),
 					'rate'    => isset( $inv['vatRate'] ) ? (float) $inv['vatRate'] : 7.5,
 				),
 				'notes'     => 'Pay by bank transfer to an account below, then upload your proof of payment. Your client portal: ' . pd_settings()['portal_url'],

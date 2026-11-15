@@ -538,6 +538,7 @@ function pd_register_routes(): void {
 				'depositPercent'  => (int) $s['deposit_percent'],
 				'invoiceDueDays'  => (int) $s['invoice_due_days'],
 				'bankDetails'     => $s['bank_details'],
+				'invoiceVat'      => (bool) $s['invoice_vat'],
 				'invoiceNaija'    => pd_invoicenaija_active(),
 			);
 		},

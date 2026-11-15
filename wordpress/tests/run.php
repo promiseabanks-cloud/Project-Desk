@@ -419,16 +419,19 @@ $GLOBALS['pd_mail'] = array();
 call( 'POST', '/documents/' . $r['documentId'] . '/sign', array( 'name' => 'Ngozi', 'signature' => $sig, 'agree' => true ) );
 $nd = $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit'", $r['projectId'] ), ARRAY_A );
 check( 'invoicenaija: deposit raised there and emailed by it', $nd && $nd['external_ref'] && $GLOBALS['inaija_sent'] === array( $nd['external_ref'] ) && 'https://example.test/invoice/' . $nd['external_ref'] === $nd['external_url'] );
-check( 'invoicenaija: amount matches its total with VAT', 8600000 === (int) $nd['amount'], $nd['amount'] );
+check( 'invoicenaija: no VAT on project invoices by default', 8000000 === (int) $nd['amount'], $nd['amount'] );
 $m = last_mail_to( 'ngozi@naija.test' );
 check( 'invoicenaija: no second invoice email from the portal', ! $m || false === strpos( $m['subject'], 'New invoice' ) );
-INAIJA_Invoices::record_payment( $nd['external_ref'], array( 'amount' => 86000 ), 'bank_proof' );
+INAIJA_Invoices::record_payment( $nd['external_ref'], array( 'amount' => 80000 ), 'bank_proof' );
 check( 'invoicenaija: paid there marks it paid here and starts work', 'paid' === pd_get_row( 'payments', (int) $nd['id'] )['status'] && pd_work_unlocked( (int) $r['projectId'] ) );
 as_user( $owner );
+pd_update_settings( array( 'invoiceVat' => true ) );
 $extra = data( call( 'POST', '/projects/' . $r['projectId'] . '/payments', array( 'label' => 'Balance', 'amount' => '120000', 'kind' => 'balance' ) ) );
 $ex    = pd_get_row( 'payments', (int) $extra['paymentId'] );
 call( 'PATCH', '/payments/' . $extra['paymentId'], array( 'status' => 'paid' ) );
 check( 'invoicenaija: confirming here records it there once', 'paid' === pd_get_row( 'payments', (int) $ex['id'] )['status'] && 1 === count( array_filter( $GLOBALS['inaija_recorded'], static fn( $x ) => $x[0] === $ex['external_ref'] ) ) && 'paid' === INAIJA_DB::$docs[ $ex['external_ref'] ]['status'] );
+check( 'invoicenaija: VAT added when switched on', 12900000 === (int) $ex['amount'], $ex['amount'] );
+pd_update_settings( array( 'invoiceVat' => false ) );
 add_filter( 'pd_use_invoicenaija', '__return_false' );
 
 /* ------------------------------------------------------------ app shell */
