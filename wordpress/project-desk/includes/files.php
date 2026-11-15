@@ -122,7 +122,7 @@ function pd_upload_start( int $user_id, array $project, string $name, int $size,
 		'client_id'  => (int) $project['client_id'],
 		'name'       => $name,
 		'size'       => $size,
-		'category'   => pd_one_of( $category, $s['asset_categories'], 'brief' ),
+		'category'   => 'payments' === $category ? 'payments' : pd_one_of( $category, $s['asset_categories'], 'brief' ),
 		'replaces'   => $replaces,
 		'received'   => 0,
 	);

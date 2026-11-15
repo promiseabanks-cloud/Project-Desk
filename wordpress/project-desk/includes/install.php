@@ -42,6 +42,8 @@ function pd_schema(): array {
 			manager_id bigint(20) unsigned NULL,
 			start_date date NULL,
 			due_date date NULL,
+			price bigint(20) unsigned NOT NULL DEFAULT 0,
+			deposit_percent tinyint(3) unsigned NOT NULL DEFAULT 0,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			KEY client_id (client_id)
@@ -118,6 +120,10 @@ function pd_schema(): array {
 			paid_at datetime NULL,
 			method varchar(120) NOT NULL DEFAULT '',
 			external_ref varchar(120) NOT NULL DEFAULT '',
+			external_url varchar(255) NOT NULL DEFAULT '',
+			proof_asset_id bigint(20) unsigned NULL,
+			proof_note text NULL,
+			proof_at datetime NULL,
 			created_at datetime NOT NULL,
 			PRIMARY KEY  (id),
 			KEY project_id (project_id)

@@ -104,9 +104,27 @@ function pd_default_services(): array {
 	);
 }
 
-/** Default agreement text. Placeholders: {business}, {company}, {service}, {date}. */
+/** Default agreement text. Placeholders: {business}, {company}, {service}, {price}, {deposit_percent}, {deposit}, {date}. */
 function pd_default_agreement(): string {
-	return "1. Engagement\n{business} will deliver the {service} work for {company} described in the fixed price and statement of work shared before this agreement. Progress, files, invoices and messages are kept in the {business} client portal.\n\n2. How the work runs\nThe project moves through the phases shown in your portal. Work starts once this agreement is signed and the deposit is paid. Phases marked for your approval only close when you approve them in the portal.\n\n3. Fees and payment\nPrices are fixed in writing before work starts. Invoices, due dates and receipts appear in the Payments tab. Monthly services are billed at the start of each month.\n\n4. Your responsibilities\nProvide brand assets, content, system access and one decision-maker for approvals. Files you upload are reviewed within two working days.\n\n5. Revisions and approvals\nTwo rounds of revisions are included at each design approval. Feedback is expected within five working days of a request for approval.\n\n6. Ownership and confidentiality\nOn final payment, the deliverables made for {company} belong to {company}. Both parties keep project materials and commercial terms confidential, and personal data is handled in line with the Nigeria Data Protection Act 2023.\n\nAgreed on {date}.";
+	return "1. Engagement\n{business} will deliver the {service} work for {company} described in the fixed price and statement of work shared before this agreement. Progress, files, invoices and messages are kept in the {business} client portal.\n\n2. How the work runs\nThe project moves through the phases shown in your portal. Work starts once this agreement is signed and the deposit is paid. Phases marked for your approval only close when you approve them in the portal.\n\n3. Fees and payment\nThe fixed price for this work is {price}. A deposit of {deposit_percent}% ({deposit}) is invoiced when this agreement is signed, and the balance as set out in the statement of work. Invoices, due dates and receipts appear in the Payments tab. Monthly services are billed at the start of each month.\n\n4. Your responsibilities\nProvide brand assets, content, system access and one decision-maker for approvals. Files you upload are reviewed within two working days.\n\n5. Revisions and approvals\nTwo rounds of revisions are included at each design approval. Feedback is expected within five working days of a request for approval.\n\n6. Ownership and confidentiality\nOn final payment, the deliverables made for {company} belong to {company}. Both parties keep project materials and commercial terms confidential, and personal data is handled in line with the Nigeria Data Protection Act 2023.\n\nAgreed on {date}.";
+}
+
+/**
+ * A business detail from the active theme when it provides them (the Banks theme does, through
+ * banks_detail()), so a first install already carries the right footer details.
+ */
+function pd_theme_detail( string $key ): string {
+	return function_exists( 'banks_detail' ) ? (string) banks_detail( $key ) : '';
+}
+
+/** The PNG logo for emails: a setting, else the theme's icon, else the plugin's mark. */
+function pd_default_email_logo(): string {
+	foreach ( array( get_stylesheet_directory(), get_template_directory() ) as $i => $dir ) {
+		if ( file_exists( $dir . '/assets/img/banks-solutions-icon-192.png' ) ) {
+			return ( 0 === $i ? get_stylesheet_directory_uri() : get_template_directory_uri() ) . '/assets/img/banks-solutions-icon-192.png';
+		}
+	}
+	return plugins_url( 'assets/email-mark.png', PD_FILE );
 }
 
 /** Settings with defaults filled in. */
@@ -123,6 +141,17 @@ function pd_settings(): array {
 		'services'          => pd_default_services(),
 		'agreement'         => pd_default_agreement(),
 		'asset_categories'  => array( 'brief', 'brand', 'copy', 'images', 'video', 'references', 'data', 'notes' ),
+		'deposit_percent'   => 50,
+		'invoice_due_days'  => 7,
+		'bank_details'      => '',
+		'legal_name'        => pd_theme_detail( 'legal' ),
+		'rc_number'         => pd_theme_detail( 'rc' ),
+		'business_email'    => pd_theme_detail( 'email' ) ? pd_theme_detail( 'email' ) : get_option( 'admin_email' ),
+		'business_phone'    => pd_theme_detail( 'whatsapp' ),
+		'business_address'  => pd_theme_detail( 'locations' ),
+		'business_website'  => home_url( '/' ),
+		'tagline'           => pd_theme_detail( 'tagline' ),
+		'email_logo_url'    => '',
 	);
 	$saved = get_option( 'pd_settings', array() );
 	return array_merge( $defaults, is_array( $saved ) ? $saved : array() );
@@ -139,6 +168,7 @@ function pd_public_settings(): array {
 		'googleClientId' => $s['google_client_id'],
 		'maxUploadMb'    => (int) $s['max_upload_mb'],
 		'categories'     => array_values( $s['asset_categories'] ),
+		'depositPercent' => (int) $s['deposit_percent'],
 		'services'       => array_map(
 			static fn( $svc ) => array( 'label' => $svc['label'], 'recurring' => (bool) $svc['recurring'] ),
 			$s['services']
@@ -185,6 +215,32 @@ function pd_update_settings( array $input ) {
 	if ( isset( $input['maxUploadMb'] ) ) {
 		$s['max_upload_mb'] = max( 1, min( 10240, (int) $input['maxUploadMb'] ) );
 	}
+	foreach ( array( 'legalName' => 'legal_name', 'rcNumber' => 'rc_number', 'businessPhone' => 'business_phone', 'businessAddress' => 'business_address', 'tagline' => 'tagline' ) as $in_key => $key ) {
+		if ( isset( $input[ $in_key ] ) ) {
+			$s[ $key ] = pd_text( $input[ $in_key ], 200 );
+		}
+	}
+	if ( isset( $input['businessEmail'] ) ) {
+		$email = sanitize_email( (string) $input['businessEmail'] );
+		if ( '' !== $email && ! is_email( $email ) ) {
+			return pd_error( 'Enter a valid business email address.' );
+		}
+		$s['business_email'] = $email;
+	}
+	foreach ( array( 'businessWebsite' => 'business_website', 'emailLogoUrl' => 'email_logo_url' ) as $in_key => $key ) {
+		if ( isset( $input[ $in_key ] ) ) {
+			$s[ $key ] = esc_url_raw( (string) $input[ $in_key ] );
+		}
+	}
+	if ( isset( $input['depositPercent'] ) ) {
+		$s['deposit_percent'] = max( 0, min( 100, (int) $input['depositPercent'] ) );
+	}
+	if ( isset( $input['invoiceDueDays'] ) ) {
+		$s['invoice_due_days'] = max( 0, min( 90, (int) $input['invoiceDueDays'] ) );
+	}
+	if ( isset( $input['bankDetails'] ) ) {
+		$s['bank_details'] = pd_textarea( $input['bankDetails'], 2000 );
+	}
 	if ( isset( $input['agreement'] ) ) {
 		$s['agreement'] = pd_textarea( $input['agreement'], 50000 ) ?: pd_default_agreement();
 	}
@@ -217,16 +273,38 @@ function pd_update_settings( array $input ) {
 	return $s;
 }
 
-/** Fills the agreement placeholders. */
-function pd_agreement_text( string $company, string $service_label ): string {
-	$s = pd_settings();
+/**
+ * Fills the agreement placeholders. When a price is set and the saved template has no {price}
+ * placeholder (an older or custom template), a short fees paragraph is added before the date line.
+ */
+function pd_agreement_text( string $company, string $service_label, int $price = 0, int $deposit_percent = 0 ): string {
+	$s        = pd_settings();
+	$template = (string) $s['agreement'];
+	$deposit  = (int) round( $price * $deposit_percent / 100 );
+	if ( $price > 0 && false === strpos( $template, '{price}' ) ) {
+		$fees     = "Price\nThe fixed price for this work is {price}. A deposit of {deposit_percent}% ({deposit}) is invoiced when this agreement is signed.";
+		$template = preg_match( '/\n\s*Agreed on \{date\}/', $template )
+			? preg_replace( '/(\n\s*Agreed on \{date\})/', "\n\n" . $fees . '$1', $template, 1 )
+			: $template . "\n\n" . $fees;
+	}
 	return strtr(
-		$s['agreement'],
+		$template,
 		array(
-			'{business}' => $s['business_name'],
-			'{company}'  => $company,
-			'{service}'  => $service_label,
-			'{date}'     => wp_date( 'j F Y' ),
+			'{business}'        => $s['business_name'],
+			'{company}'         => $company,
+			'{service}'         => $service_label,
+			'{price}'           => $price > 0 ? pd_format_money( $price ) : 'as agreed in writing',
+			'{deposit_percent}' => (string) $deposit_percent,
+			'{deposit}'         => $price > 0 ? pd_format_money( $deposit ) : 'as invoiced',
+			'{date}'            => wp_date( 'j F Y' ),
 		)
 	);
+}
+
+/** Money in minor units (kobo) as text, for example ₦250,000 or ₦250,000.50. */
+function pd_format_money( int $minor, string $currency = '' ): string {
+	$currency = $currency ? $currency : (string) pd_settings()['currency'];
+	$symbols  = array( 'NGN' => '₦', 'USD' => '$', 'GBP' => '£', 'EUR' => '€', 'GHS' => '₵', 'KES' => 'KSh ', 'ZAR' => 'R' );
+	$symbol   = $symbols[ $currency ] ?? $currency . ' ';
+	return $symbol . number_format( $minor / 100, 0 === $minor % 100 ? 0 : 2 );
 }
