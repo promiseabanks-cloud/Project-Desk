@@ -132,6 +132,21 @@ export type Client = {
   createdAt: string
 }
 
+export type Lead = {
+  id: number
+  company: string
+  contactName: string
+  email: string
+  phone: string
+  service: string
+  budget: string
+  message: string
+  source: string
+  status: 'new' | 'contacted' | 'converted' | 'archived'
+  clientId: number | null
+  createdAt: string
+}
+
 export type Notice = { id: number; projectId: number | null; title: string; body: string; createdAt: string; read: boolean }
 
 export type ServiceDef = { label: string; recurring: boolean; phases: { name: string; signoff: boolean }[] }
@@ -143,6 +158,7 @@ export type ConsoleData = {
   documents: Doc[]
   notifications: Notice[]
   services: Record<string, ServiceDef>
+  leads: Lead[]
 }
 
 declare global {

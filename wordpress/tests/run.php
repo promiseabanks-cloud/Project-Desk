@@ -375,6 +375,26 @@ call( 'POST', '/payments/' . $ppinv_id . '/record', array( 'amount' => '90000' )
 $pp_done = pd_get_row( 'payments', $ppinv_id );
 check( 'part-payment: full amount settles invoice', 'paid' === $pp_done['status'] && (int) $pp_done['amount_paid'] === $pp_full );
 
+/* Public intake: enquiries land as leads the team can convert. */
+as_user( 0 );
+$lead_res = call( 'POST', '/leads', array( 'company' => 'Acme Foods', 'contactName' => 'Dapo Ade', 'email' => 'dapo@acme.test', 'phone' => '08030000000', 'service' => 'website', 'budget' => '₦2M', 'message' => 'We need a new site before December.' ) );
+check( 'lead: public can submit', 201 === $lead_res->get_status() || isset( data( $lead_res )['leadId'] ) );
+$lead_id = (int) ( data( $lead_res )['leadId'] ?? 0 );
+check( 'lead: a row was created', $lead_id > 0 && 'new' === pd_get_row( 'leads', $lead_id )['status'] );
+as_user( 0 );
+call( 'POST', '/leads', array( 'contactName' => 'Spam Bot', 'email' => 'bot@spam.test', 'website' => 'http://spam.test', 'message' => 'buy now' ) );
+as_user( $owner );
+$leads_now = data( call( 'GET', '/console' ) )['leads'];
+check( 'lead: honeypot drops the submission', ! array_filter( $leads_now, static fn( $l ) => 'bot@spam.test' === $l['email'] ) );
+check( 'lead: console lists real leads', (bool) array_filter( $leads_now, static fn( $l ) => $l['id'] === $lead_id ) );
+as_user( 0 );
+check( 'lead: signed-out cannot change a lead', 401 === call( 'PATCH', '/leads/' . $lead_id, array( 'status' => 'archived' ) )->get_status() || 403 === call( 'PATCH', '/leads/' . $lead_id, array( 'status' => 'archived' ) )->get_status() );
+as_user( $owner );
+$some_client = (int) data( call( 'GET', '/console' ) )['clients'][0]['id'];
+call( 'PATCH', '/leads/' . $lead_id, array( 'status' => 'converted', 'clientId' => $some_client ) );
+$lead_conv = pd_get_row( 'leads', $lead_id );
+check( 'lead: converting links the client', 'converted' === $lead_conv['status'] && (int) $lead_conv['client_id'] === $some_client );
+
 /* InvoiceNaija, with a stand-in for the plugin's classes. */
 if ( ! class_exists( 'INAIJA_Invoices' ) ) {
 	class INAIJA_Settings {

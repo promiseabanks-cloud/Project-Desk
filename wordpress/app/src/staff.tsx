@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Payment, type Phase, type Project, type ServiceDef } from './api'
+import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Lead, type Payment, type Phase, type Project, type ServiceDef } from './api'
 import { ClientApp, ProjectRow, Shell } from './client'
 import { go, type Route } from './router'
 import { AssetRow, AssetSheet, DocumentSheet, FilesHub, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
@@ -7,6 +7,7 @@ import { Button, CountUp, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skel
 
 type Sheets =
   | { kind: 'onboard' }
+  | { kind: 'convert'; lead: Lead }
   | { kind: 'asset'; asset: Asset }
   | { kind: 'doc'; doc: Doc }
   | { kind: 'newdoc'; client: Client; projectId?: number }
@@ -45,6 +46,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
   const approvals = data.projects.flatMap((p) => p.phases.filter((ph) => ph.signoff && ph.approvedAt && ph.status === 'ongoing').map((ph) => ({ ph, p })))
   const clientName = (cid: number) => data.clients.find((c) => c.id === cid)?.company ?? ''
   const unread = data.notifications.filter((n) => !n.read).length
+  const newLeads = (data.leads ?? []).filter((l) => l.status === 'new').length
 
   let body: React.ReactNode
   if (section === 'projects' && id) {
@@ -91,6 +93,8 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
         </div>
       </div>
     )
+  } else if (section === 'leads') {
+    body = <LeadsView data={data} reload={reload} open={setSheet} />
   } else if (section === 'money' && can.money) {
     body = <MoneyView data={data} />
   } else if (section === 'settings' && can.settings) {
@@ -202,6 +206,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
     ['clients', 'Clients', 'users', false],
     ['projects', 'Projects', 'folder', false],
     ['review', 'Review', 'check', pendingAssets.length > 0],
+    ['leads', 'Leads', 'mail', newLeads > 0],
     ...(can.money ? ([['money', 'Money', 'wallet', overdue.length > 0]] as [string, string, string, boolean][]) : []),
     ...(can.settings ? ([['settings', 'Settings', 'settings', false]] as [string, string, string, boolean][]) : []),
   ]
@@ -226,6 +231,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
         </button>
       )}
       {sheet?.kind === 'onboard' && <OnboardSheet services={data.services} onClose={() => setSheet(null)} onDone={(cid) => (reload(), go(`clients/${cid}`))} />}
+      {sheet?.kind === 'convert' && <OnboardSheet services={data.services} lead={sheet.lead} onClose={() => setSheet(null)} onDone={(cid) => (reload(), go(`clients/${cid}`))} />}
       {sheet?.kind === 'asset' && <AssetSheet asset={sheet.asset} staff onClose={() => setSheet(null)} onChanged={reload} />}
       {sheet?.kind === 'doc' && <DocumentSheet doc={sheet.doc} canSign={false} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'newdoc' && <NewDocSheet client={sheet.client} projects={data.projects.filter((p) => p.clientId === sheet.client.id)} onClose={() => setSheet(null)} onDone={reload} />}
@@ -802,9 +808,122 @@ function MoneyView({ data }: { data: ConsoleData }) {
   )
 }
 
-function OnboardSheet({ services, onClose, onDone }: { services: Record<string, ServiceDef>; onClose: () => void; onDone: (clientId: number) => void }) {
+const LEAD_TONE: Record<Lead['status'], string> = { new: 'warn', contacted: '', converted: 'ok', archived: '' }
+const LEAD_LABEL: Record<Lead['status'], string> = { new: 'New', contacted: 'Contacted', converted: 'Converted', archived: 'Archived' }
+
+function LeadsView({ data, reload, open }: { data: ConsoleData; reload: () => void; open: (s: Sheets) => void }) {
+  const leads = data.leads ?? []
+  const [filter, setFilter] = useState<'open' | 'converted' | 'archived' | 'all'>('open')
+  const [busy, setBusy] = useState(0)
+  const serviceLabel = (key: string) => data.services[key]?.label ?? ''
+  const shown = leads.filter((l) =>
+    filter === 'all' ? true : filter === 'open' ? l.status === 'new' || l.status === 'contacted' : l.status === filter,
+  )
+  const move = async (lead: Lead, status: Lead['status']) => {
+    setBusy(lead.id)
+    try {
+      await api(`/leads/${lead.id}`, { method: 'PATCH', body: { status } })
+      reload()
+    } catch (e) {
+      toast('That did not work', (e as Error).message, 'bad')
+    } finally {
+      setBusy(0)
+    }
+  }
+  const counts = {
+    open: leads.filter((l) => l.status === 'new' || l.status === 'contacted').length,
+    converted: leads.filter((l) => l.status === 'converted').length,
+    archived: leads.filter((l) => l.status === 'archived').length,
+  }
+  return (
+    <div className="screen">
+      <header className="page-head">
+        <span className="eyebrow">Leads</span>
+        <h1>{counts.open ? `${counts.open} enquir${counts.open === 1 ? 'y' : 'ies'} to follow up` : 'Enquiries'}</h1>
+        <p className="muted">New enquiries from your public form. Mark who you have contacted, then convert the good ones into clients.</p>
+      </header>
+      <Segmented
+        value={filter}
+        onChange={setFilter}
+        options={[
+          ['open', `Open${counts.open ? ` (${counts.open})` : ''}`],
+          ['converted', 'Converted'],
+          ['archived', 'Archived'],
+          ['all', 'All'],
+        ]}
+      />
+      <div className="list stagger" style={{ marginTop: 16 }}>
+        {shown.length === 0 && <Empty icon="mail">No enquiries here yet.</Empty>}
+        {shown.map((l) => (
+          <div key={l.id} className="card lead-card">
+            <div className="lead-top">
+              <div className="grow">
+                <strong style={{ display: 'block', fontSize: '1.05rem' }}>{l.company || l.contactName}</strong>
+                <span className="muted" style={{ fontSize: '.88rem' }}>
+                  {l.company ? `${l.contactName} · ` : ''}
+                  {ago(l.createdAt)}
+                </span>
+              </div>
+              <Pill tone={LEAD_TONE[l.status]}>{LEAD_LABEL[l.status]}</Pill>
+            </div>
+            <div className="lead-meta">
+              <a href={`mailto:${l.email}`}>{l.email}</a>
+              {l.phone && <a href={`tel:${l.phone}`}>{l.phone}</a>}
+              {serviceLabel(l.service) && <span>{serviceLabel(l.service)}</span>}
+              {l.budget && <span>Budget: {l.budget}</span>}
+            </div>
+            {l.message && <p className="lead-msg">{l.message}</p>}
+            {l.status !== 'converted' && (
+              <div className="lead-actions">
+                {l.status === 'new' && (
+                  <Button variant="ghost" onClick={() => move(l, 'contacted')} busy={busy === l.id}>
+                    Mark contacted
+                  </Button>
+                )}
+                <Button variant="accent" icon="sparkle" onClick={() => open({ kind: 'convert', lead: l })}>
+                  Convert to client
+                </Button>
+                {l.status !== 'archived' && (
+                  <Button variant="ghost" onClick={() => move(l, 'archived')} busy={busy === l.id}>
+                    Archive
+                  </Button>
+                )}
+                {l.status === 'archived' && (
+                  <Button variant="ghost" onClick={() => move(l, 'new')} busy={busy === l.id}>
+                    Reopen
+                  </Button>
+                )}
+              </div>
+            )}
+            {l.status === 'converted' && l.clientId && (
+              <div className="lead-actions">
+                <Button variant="ghost" onClick={() => go(`clients/${l.clientId}`)}>
+                  Open client
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function OnboardSheet({ services, lead, onClose, onDone }: { services: Record<string, ServiceDef>; lead?: Lead; onClose: () => void; onDone: (clientId: number) => void }) {
   const keys = Object.keys(services)
-  const [f, setF] = useState({ company: '', contactName: '', email: '', phone: '', industry: '', service: keys[0] ?? 'website', projectName: '', dueDate: '', notes: '', price: '', depositPercent: String(boot.brand.depositPercent ?? 50) })
+  const [f, setF] = useState({
+    company: lead?.company ?? '',
+    contactName: lead?.contactName ?? '',
+    email: lead?.email ?? '',
+    phone: lead?.phone ?? '',
+    industry: '',
+    service: (lead?.service && services[lead.service] ? lead.service : keys[0]) ?? 'website',
+    projectName: '',
+    dueDate: '',
+    notes: lead?.message ? `From enquiry: ${lead.message}` : '',
+    price: '',
+    depositPercent: String(boot.brand.depositPercent ?? 50),
+  })
   const [milestones, setMilestones] = useState<Record<number, string>>({})
   const [error, setError] = useState('')
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
@@ -813,6 +932,13 @@ function OnboardSheet({ services, onClose, onDone }: { services: Record<string, 
     setError('')
     try {
       const r = await api<{ clientId: number }>('/clients', { body: { ...f, milestones } })
+      if (lead) {
+        try {
+          await api(`/leads/${lead.id}`, { method: 'PATCH', body: { status: 'converted', clientId: r.clientId } })
+        } catch {
+          /* client is created; the lead status is non-critical */
+        }
+      }
       toast(`${f.company} is onboarded`, `Invite and agreement sent to ${f.email}.`)
       onClose()
       onDone(r.clientId)
@@ -821,7 +947,7 @@ function OnboardSheet({ services, onClose, onDone }: { services: Record<string, 
     }
   }
   return (
-    <Sheet title="Onboard a client" onClose={onClose}>
+    <Sheet title={lead ? 'Convert enquiry to client' : 'Onboard a client'} onClose={onClose}>
       <p className="muted" style={{ marginBottom: 20 }}>
         Creates their portal, emails an invite, sets up the project with its phases and sends the service agreement to sign.
       </p>
