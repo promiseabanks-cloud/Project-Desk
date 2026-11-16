@@ -167,6 +167,7 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 						'label'    => $x['label'],
 						'kind'     => $x['kind'],
 						'amount'   => (int) $x['amount'],
+						'amountPaid' => (int) $x['amount_paid'],
 						'currency' => $x['currency'],
 						'dueDate'  => $x['due_date'],
 						'status'   => pd_payment_state( $x ),

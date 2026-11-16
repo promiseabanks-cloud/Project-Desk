@@ -115,6 +115,7 @@ function pd_schema(): array {
 			label varchar(160) NOT NULL,
 			kind varchar(20) NOT NULL DEFAULT 'milestone',
 			amount bigint(20) unsigned NOT NULL,
+			amount_paid bigint(20) unsigned NOT NULL DEFAULT 0,
 			currency char(3) NOT NULL DEFAULT 'NGN',
 			due_date date NULL,
 			status varchar(20) NOT NULL DEFAULT 'due',

@@ -617,7 +617,10 @@ export function DocumentSheet({ doc, onClose, canSign, onSigned }: { doc: Doc; o
 }
 
 export function PaymentRow({ p, action }: { p: Payment; action?: React.ReactNode }) {
+  const open = p.status === 'due' || p.status === 'overdue'
   const awaiting = p.status !== 'paid' && p.status !== 'cancelled' && !!p.proofAt
+  const partial = open && p.amountPaid > 0
+  const left = Math.max(0, p.amount - p.amountPaid)
   const tone = p.status === 'paid' ? 'ok' : awaiting ? '' : p.status === 'overdue' ? 'bad' : p.status === 'cancelled' ? '' : 'warn'
   const label = p.status === 'overdue' ? 'Overdue' : p.status[0].toUpperCase() + p.status.slice(1)
   return (
@@ -632,16 +635,18 @@ export function PaymentRow({ p, action }: { p: Payment; action?: React.ReactNode
         <span className="sub" style={{ display: 'block' }}>
           {p.status === 'paid'
             ? `Paid ${date(p.paidAt)}${p.method ? ` · ${p.method}` : ''}`
-            : awaiting
-              ? `Proof sent ${date(p.proofAt)} · awaiting confirmation`
-              : p.dueDate
-                ? `Due ${date(p.dueDate)}`
-                : 'Due'}
+            : partial
+              ? `${money(p.amountPaid, p.currency)} paid · ${money(left, p.currency)} left`
+              : awaiting
+                ? `Proof sent ${date(p.proofAt)} · awaiting confirmation`
+                : p.dueDate
+                  ? `Due ${date(p.dueDate)}`
+                  : 'Due'}
         </span>
       </span>
       <span style={{ textAlign: 'right', display: 'grid', gap: 4, justifyItems: 'end' }}>
-        <span className="amount">{money(p.amount, p.currency)}</span>
-        {action ?? <Pill tone={tone}>{awaiting ? 'Checking' : label}</Pill>}
+        <span className="amount">{money(partial ? left : p.amount, p.currency)}</span>
+        {action ?? <Pill tone={tone}>{partial ? 'Part-paid' : awaiting ? 'Checking' : label}</Pill>}
       </span>
     </div>
   )

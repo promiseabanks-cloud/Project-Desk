@@ -274,7 +274,7 @@ function pd_mark_payment_paid( int $payment_id, string $method = 'Bank transfer'
 	}
 	$changed = $wpdb->update(
 		pd_table( 'payments' ),
-		array( 'status' => 'paid', 'paid_at' => pd_now(), 'method' => $method ? $method : 'Bank transfer' ),
+		array( 'status' => 'paid', 'paid_at' => pd_now(), 'method' => $method ? $method : 'Bank transfer', 'amount_paid' => (int) $payment['amount'] ),
 		array( 'id' => $payment_id, 'status' => $payment['status'] )
 	);
 	if ( ! $changed ) {
@@ -307,6 +307,59 @@ function pd_mark_payment_paid( int $payment_id, string $method = 'Bank transfer'
 		pd_advance_after_milestone( (int) $payment['phase_id'] );
 	}
 	return true;
+}
+
+/**
+ * Records a part-payment against an invoice. When the running total reaches the invoice amount the
+ * invoice is marked fully paid (receipt, milestone advance, InvoiceNaija record); otherwise the
+ * balance is carried and the client is told what is left.
+ */
+function pd_record_part_payment( int $payment_id, int $amount, string $method = 'Bank transfer' ) {
+	global $wpdb;
+	$payment = pd_get_row( 'payments', $payment_id );
+	if ( ! $payment ) {
+		return pd_error( 'Payment not found.', 404 );
+	}
+	if ( 'paid' === $payment['status'] || 'cancelled' === $payment['status'] ) {
+		return pd_error( 'This invoice is already settled.' );
+	}
+	if ( $amount < 1 ) {
+		return pd_error( 'Enter the amount received.' );
+	}
+	$already   = (int) $payment['amount_paid'];
+	$total     = (int) $payment['amount'];
+	$remaining = max( 0, $total - $already );
+	if ( $amount >= $remaining ) {
+		// Settles the invoice: run the normal full-payment flow.
+		pd_mark_payment_paid( $payment_id, $method );
+		return array( 'status' => 'paid', 'amountPaid' => $total, 'remaining' => 0 );
+	}
+	$new_paid = $already + $amount;
+	$wpdb->update(
+		pd_table( 'payments' ),
+		array( 'amount_paid' => $new_paid, 'method' => $method ? $method : 'Bank transfer' ),
+		array( 'id' => $payment_id )
+	);
+	$client = pd_get_row( 'clients', (int) $payment['client_id'] );
+	pd_notify(
+		array(
+			array(
+				'audience'   => 'client',
+				'client_id'  => (int) $payment['client_id'],
+				'project_id' => (int) $payment['project_id'],
+				'title'      => 'Part-payment received: ' . $payment['label'],
+				'body'       => sprintf(
+					'We have recorded %s towards %s. That leaves a balance of %s.',
+					pd_format_money( $amount, $payment['currency'] ),
+					$payment['label'],
+					pd_format_money( $total - $new_paid, $payment['currency'] )
+				),
+				'channels'   => array( 'email' ),
+				'email'      => $client['email'] ?? '',
+			),
+		)
+	);
+	return array( 'status' => 'due', 'amountPaid' => $new_paid, 'remaining' => $total - $new_paid );
 }
 
 /**

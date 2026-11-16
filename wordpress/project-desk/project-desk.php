@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'PD_VERSION', '0.4.0' );
-define( 'PD_DB_VERSION', 3 );
+define( 'PD_DB_VERSION', 4 );
 define( 'PD_FILE', __FILE__ );
 define( 'PD_DIR', __DIR__ );
 

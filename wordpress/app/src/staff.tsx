@@ -11,6 +11,7 @@ type Sheets =
   | { kind: 'doc'; doc: Doc }
   | { kind: 'newdoc'; client: Client; projectId?: number }
   | { kind: 'invoice'; project: Project }
+  | { kind: 'record'; payment: Payment; project: Project }
   | { kind: 'upload'; project: Project }
   | { kind: 'override'; phase: Phase; status: Phase['status']; reason: string }
   | { kind: 'project'; client: Client }
@@ -229,6 +230,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
       {sheet?.kind === 'doc' && <DocumentSheet doc={sheet.doc} canSign={false} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'newdoc' && <NewDocSheet client={sheet.client} projects={data.projects.filter((p) => p.clientId === sheet.client.id)} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'invoice' && <InvoiceSheet project={sheet.project} onClose={() => setSheet(null)} onDone={reload} />}
+      {sheet?.kind === 'record' && <RecordPaymentSheet payment={sheet.payment} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'upload' && <UploadSheet projects={[sheet.project]} initialProject={sheet.project.id} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'project' && <NewProjectSheet client={sheet.client} services={data.services} onClose={() => setSheet(null)} onDone={(pid) => (reload(), go(`projects/${pid}`))} />}
       {sheet?.kind === 'override' && <OverrideSheet {...sheet} onClose={() => setSheet(null)} onDone={reload} />}
@@ -481,7 +483,7 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
               </div>
               <div>
                 <span className="eyebrow">Paid</span>
-                <strong className="amount">{money(project.payments.filter((p) => p.status === 'paid').reduce((t, p) => t + p.amount, 0))}</strong>
+                <strong className="amount">{money(project.payments.filter((p) => p.status !== 'cancelled').reduce((t, p) => t + p.amountPaid, 0))}</strong>
               </div>
             </div>
           )}
@@ -518,8 +520,13 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
                       ) : undefined
                     }
                   />
-                  {(p.proofAt || p.externalUrl) && (
+                  {(p.proofAt || p.externalUrl || (can.money && unpaid)) && (
                     <div className="pay-actions">
+                      {can.money && unpaid && (
+                        <Button variant="quiet small" icon="wallet" onClick={() => open({ kind: 'record', payment: p, project })}>
+                          Record payment
+                        </Button>
+                      )}
                       {p.proofAssetId && (
                         <a className="btn quiet small" href={fileUrl(p.proofAssetId)} target="_blank" rel="noopener">
                           <Icon name="file" />
@@ -593,28 +600,32 @@ function MoneyView({ data }: { data: ConsoleData }) {
   const clientName = (cid: number) => data.clients.find((c) => c.id === cid)?.company ?? 'Unknown'
   const pays = data.projects.flatMap((p) => p.payments.map((pay) => ({ pay, project: p })))
   const open = (s: Payment['status']) => s === 'due' || s === 'overdue'
-  const sum = (list: { pay: Payment }[]) => list.reduce((s, x) => s + x.pay.amount, 0)
+  // What's still owed on an open invoice (full amount less any part-payments).
+  const remaining = (p: Payment) => Math.max(0, p.amount - p.amountPaid)
+  const sumRemaining = (list: { pay: Payment }[]) => list.reduce((s, x) => s + remaining(x.pay), 0)
 
   const paid = pays.filter((x) => x.pay.status === 'paid')
   const outstanding = pays.filter((x) => open(x.pay.status))
   const overdue = pays.filter((x) => x.pay.status === 'overdue')
   const awaiting = outstanding.filter((x) => x.pay.proofAt) // client sent proof, not yet confirmed
 
-  const collected = sum(paid)
-  const owed = sum(outstanding)
-  const overdueAmt = sum(overdue)
+  // Collected counts every naira received, including part-payments on still-open invoices.
+  const collected = pays.filter((x) => x.pay.status !== 'cancelled').reduce((s, x) => s + x.pay.amountPaid, 0)
+  const owed = sumRemaining(outstanding)
+  const overdueAmt = sumRemaining(overdue)
 
   const now = new Date()
   const thisMonth = ym(now)
-  const expectedThisMonth = sum(outstanding.filter((x) => x.pay.dueDate && ym(new Date(x.pay.dueDate + 'T00:00:00')) === thisMonth))
+  const expectedThisMonth = sumRemaining(outstanding.filter((x) => x.pay.dueDate && ym(new Date(x.pay.dueDate + 'T00:00:00')) === thisMonth))
   const rate = collected + owed > 0 ? collected / (collected + owed) : 0
 
   // Per-client totals, most owed first.
   const byClient = new Map<number, { collected: number; owed: number }>()
   for (const { pay, project } of pays) {
+    if (pay.status === 'cancelled') continue
     const e = byClient.get(project.clientId) ?? { collected: 0, owed: 0 }
-    if (pay.status === 'paid') e.collected += pay.amount
-    else if (open(pay.status)) e.owed += pay.amount
+    e.collected += pay.amountPaid
+    if (open(pay.status)) e.owed += remaining(pay)
     byClient.set(project.clientId, e)
   }
   const clients = [...byClient.entries()]
@@ -696,7 +707,7 @@ function MoneyView({ data }: { data: ConsoleData }) {
         <section className="section">
           <div className="section-head">
             <h3>Awaiting your confirmation</h3>
-            <span className="muted">{money(sum(awaiting))}</span>
+            <span className="muted">{money(sumRemaining(awaiting))}</span>
           </div>
           <div className="list stagger">
             {awaiting.map(({ pay, project }) => (
@@ -712,7 +723,7 @@ function MoneyView({ data }: { data: ConsoleData }) {
                     Proof sent {ago(pay.proofAt)} — confirm to start the next phase
                   </span>
                 </span>
-                <span className="money-amt">{money(pay.amount)}</span>
+                <span className="money-amt">{money(remaining(pay))}</span>
                 <Icon name="chevron" className="chev" />
               </button>
             ))}
@@ -1127,6 +1138,52 @@ function InvoiceSheet({ project, onClose, onDone }: { project: Project; onClose:
         }}
       >
         Add invoice
+      </Button>
+    </Sheet>
+  )
+}
+
+/** Records a payment (part or full) against an invoice. Reaching the full amount settles it. */
+function RecordPaymentSheet({ payment, onClose, onDone }: { payment: Payment; onClose: () => void; onDone: () => void }) {
+  const left = Math.max(0, payment.amount - payment.amountPaid)
+  const [amount, setAmount] = useState(String(Math.round(left / 100)))
+  const [method, setMethod] = useState('Bank transfer')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const entered = naira(amount) * 100
+  const settles = entered >= left
+  const submit = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api(`/payments/${payment.id}/record`, { body: { amount, method } })
+      toast(settles ? 'Payment confirmed' : 'Part-payment recorded', settles ? 'The client gets their receipt by email.' : `${money(Math.max(0, left - entered))} still outstanding. The client has been told.`)
+      onDone()
+      onClose()
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+  return (
+    <Sheet title="Record a payment" onClose={onClose}>
+      <div className="proof-sum" style={{ marginBottom: 18 }}>
+        <span className="muted">{payment.label}</span>
+        <strong className="amount">{money(left, payment.currency)} left</strong>
+      </div>
+      {payment.amountPaid > 0 && <p className="hint" style={{ marginTop: -8 }}>{money(payment.amountPaid, payment.currency)} of {money(payment.amount, payment.currency)} already paid.</p>}
+      {error && <div className="form-error">{error}</div>}
+      <div className="grid-2">
+        <Field label={`Amount received (${boot.brand.currency})`}>
+          <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        </Field>
+        <Field label="Method">
+          <input value={method} onChange={(e) => setMethod(e.target.value)} />
+        </Field>
+      </div>
+      <p className="hint">{entered <= 0 ? 'Enter the amount you received.' : settles ? 'This settles the invoice — a receipt goes to the client and any held phase starts.' : `Records a part-payment. ${money(Math.max(0, left - entered))} will remain.`}</p>
+      <Button variant="accent block" icon={settles ? 'check' : 'wallet'} disabled={busy || entered <= 0} onClick={submit}>
+        {busy ? 'Saving…' : settles ? 'Confirm full payment' : `Record ${money(entered)}`}
       </Button>
     </Sheet>
   )
