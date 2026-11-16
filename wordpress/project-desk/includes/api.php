@@ -438,6 +438,18 @@ function pd_register_routes(): void {
 	);
 
 	pd_route(
+		'/payments/(?P<id>\d+)/record',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			$b      = pd_json_body( $r );
+			$amount = pd_money( $b['amount'] ?? null );
+			$result = pd_record_part_payment( (int) $r['id'], (int) $amount, pd_text( $b['method'] ?? '', 120 ) ?: 'Bank transfer' );
+			return is_wp_error( $result ) ? $result : $result;
+		},
+		'pd_can_money'
+	);
+
+	pd_route(
 		'/payments/(?P<id>\d+)/proof',
 		'POST',
 		static function ( WP_REST_Request $r ) {

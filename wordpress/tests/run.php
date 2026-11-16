@@ -360,6 +360,21 @@ call( 'PATCH', '/payments/' . $dep['id'], array( 'status' => 'paid' ) );
 check( 'billing: confirming deposit starts work once signed', 'paid' === pd_get_row( 'payments', (int) $dep['id'] )['status'] && pd_work_unlocked( (int) $pp['projectId'] ) );
 check( 'billing: confirming twice does nothing', false === pd_mark_payment_paid( (int) $dep['id'] ) );
 
+/* Part-payments: record a partial, then settle. */
+as_user( $owner );
+$ppinv    = data( call( 'POST', '/projects/' . (int) $pp['projectId'] . '/payments', array( 'label' => 'Balance test', 'amount' => '100000', 'kind' => 'balance' ) ) );
+$ppinv_id = (int) $ppinv['paymentId'];
+$pp_full  = (int) pd_get_row( 'payments', $ppinv_id )['amount'];
+call( 'POST', '/payments/' . $ppinv_id . '/record', array( 'amount' => '30000' ) );
+$pp_after = pd_get_row( 'payments', $ppinv_id );
+check( 'part-payment: partial recorded, still due', 'due' === $pp_after['status'] && (int) $pp_after['amount_paid'] > 0 && (int) $pp_after['amount_paid'] < $pp_full );
+as_user( $pat->ID );
+check( 'part-payment: client cannot record', 403 === call( 'POST', '/payments/' . $ppinv_id . '/record', array( 'amount' => '1000' ) )->get_status() );
+as_user( $owner );
+call( 'POST', '/payments/' . $ppinv_id . '/record', array( 'amount' => '90000' ) );
+$pp_done = pd_get_row( 'payments', $ppinv_id );
+check( 'part-payment: full amount settles invoice', 'paid' === $pp_done['status'] && (int) $pp_done['amount_paid'] === $pp_full );
+
 /* InvoiceNaija, with a stand-in for the plugin's classes. */
 if ( ! class_exists( 'INAIJA_Invoices' ) ) {
 	class INAIJA_Settings {

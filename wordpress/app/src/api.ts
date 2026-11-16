@@ -64,6 +64,7 @@ export type Payment = {
   label: string
   kind: string
   amount: number
+  amountPaid: number
   currency: string
   dueDate: string | null
   status: 'due' | 'paid' | 'overdue' | 'cancelled'
