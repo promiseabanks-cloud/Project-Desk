@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Phase, type Project, type ServiceDef } from './api'
+import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Payment, type Phase, type Project, type ServiceDef } from './api'
 import { ClientApp, ProjectRow, Shell } from './client'
 import { go, type Route } from './router'
 import { AssetRow, AssetSheet, DocumentSheet, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
@@ -85,6 +85,8 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
         </div>
       </div>
     )
+  } else if (section === 'money' && can.money) {
+    body = <MoneyView data={data} />
   } else if (section === 'settings' && can.settings) {
     body = <SettingsView />
   } else {
@@ -194,6 +196,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
     ['clients', 'Clients', 'users', false],
     ['projects', 'Projects', 'folder', false],
     ['review', 'Review', 'check', pendingAssets.length > 0],
+    ...(can.money ? ([['money', 'Money', 'wallet', overdue.length > 0]] as [string, string, string, boolean][]) : []),
     ...(can.settings ? ([['settings', 'Settings', 'settings', false]] as [string, string, string, boolean][]) : []),
   ]
 
@@ -554,6 +557,232 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
             </Button>
           </div>
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Animated money figure (kobo → formatted), eased like CountUp. */
+function CountMoney({ value }: { value: number }) {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setN(value)
+      return
+    }
+    let frame = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const p = Math.min(1, (now - start) / 1100)
+      setN(value * (1 - Math.pow(1 - p, 3)))
+      if (p < 1) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [value])
+  return <>{money(Math.round(n))}</>
+}
+
+const ym = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+
+/** Owner money dashboard — collected, outstanding, overdue, expected, per-client and a 6-month trend, all from console data. */
+function MoneyView({ data }: { data: ConsoleData }) {
+  const clientName = (cid: number) => data.clients.find((c) => c.id === cid)?.company ?? 'Unknown'
+  const pays = data.projects.flatMap((p) => p.payments.map((pay) => ({ pay, project: p })))
+  const open = (s: Payment['status']) => s === 'due' || s === 'overdue'
+  const sum = (list: { pay: Payment }[]) => list.reduce((s, x) => s + x.pay.amount, 0)
+
+  const paid = pays.filter((x) => x.pay.status === 'paid')
+  const outstanding = pays.filter((x) => open(x.pay.status))
+  const overdue = pays.filter((x) => x.pay.status === 'overdue')
+  const awaiting = outstanding.filter((x) => x.pay.proofAt) // client sent proof, not yet confirmed
+
+  const collected = sum(paid)
+  const owed = sum(outstanding)
+  const overdueAmt = sum(overdue)
+
+  const now = new Date()
+  const thisMonth = ym(now)
+  const expectedThisMonth = sum(outstanding.filter((x) => x.pay.dueDate && ym(new Date(x.pay.dueDate + 'T00:00:00')) === thisMonth))
+  const rate = collected + owed > 0 ? collected / (collected + owed) : 0
+
+  // Per-client totals, most owed first.
+  const byClient = new Map<number, { collected: number; owed: number }>()
+  for (const { pay, project } of pays) {
+    const e = byClient.get(project.clientId) ?? { collected: 0, owed: 0 }
+    if (pay.status === 'paid') e.collected += pay.amount
+    else if (open(pay.status)) e.owed += pay.amount
+    byClient.set(project.clientId, e)
+  }
+  const clients = [...byClient.entries()]
+    .map(([cid, v]) => ({ cid, ...v }))
+    .filter((c) => c.collected || c.owed)
+    .sort((a, b) => b.owed - a.owed || b.collected - a.collected)
+  const clientMax = Math.max(1, ...clients.map((c) => c.collected + c.owed))
+
+  // 6-month collected trend.
+  const months: { key: string; label: string; total: number }[] = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push({ key: ym(d), label: d.toLocaleDateString('en-GB', { month: 'short' }), total: 0 })
+  }
+  for (const { pay } of paid) {
+    if (!pay.paidAt) continue
+    const key = ym(new Date(pay.paidAt))
+    const m = months.find((x) => x.key === key)
+    if (m) m.total += pay.amount
+  }
+  const trendMax = Math.max(1, ...months.map((m) => m.total))
+
+  const recent = [...paid]
+    .filter((x) => x.pay.paidAt)
+    .sort((a, b) => (a.pay.paidAt! < b.pay.paidAt! ? 1 : -1))
+    .slice(0, 6)
+
+  if (pays.length === 0) {
+    return (
+      <div className="screen">
+        <header className="page-head">
+          <span className="eyebrow">Money</span>
+          <h1>Where the money stands</h1>
+        </header>
+        <Empty icon="wallet">No invoices yet. Set a price when you onboard a client and the deposit invoice goes out automatically once the agreement is signed.</Empty>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen">
+      <header className="page-head">
+        <span className="eyebrow">Money</span>
+        <h1>Where the money stands</h1>
+      </header>
+
+      <div className="money-hero">
+        <span className="eyebrow">Collected to date</span>
+        <strong className="money-hero-figure">
+          <CountMoney value={collected} />
+        </strong>
+        <div className="collect-bar" role="img" aria-label={`${Math.round(rate * 100)}% of invoiced money collected`}>
+          <span className="fill" style={{ width: `${Math.round(rate * 100)}%` }} />
+        </div>
+        <span className="money-hero-sub">
+          {Math.round(rate * 100)}% of invoiced money collected · {money(owed)} still outstanding
+        </span>
+      </div>
+
+      <div className="money-kpis stagger">
+        <div className="money-kpi">
+          <span className="eyebrow">Outstanding</span>
+          <strong>{money(owed)}</strong>
+          <span className="kpi-foot">{outstanding.length} invoice{outstanding.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className={`money-kpi ${overdueAmt > 0 ? 'bad' : ''}`}>
+          <span className="eyebrow">Overdue</span>
+          <strong>{money(overdueAmt)}</strong>
+          <span className="kpi-foot">{overdue.length} invoice{overdue.length === 1 ? '' : 's'}</span>
+        </div>
+        <div className="money-kpi">
+          <span className="eyebrow">Due this month</span>
+          <strong>{money(expectedThisMonth)}</strong>
+          <span className="kpi-foot">{data.projects.filter((p) => p.status !== 'cancelled').length} active project{data.projects.filter((p) => p.status !== 'cancelled').length === 1 ? '' : 's'}</span>
+        </div>
+      </div>
+
+      {awaiting.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h3>Awaiting your confirmation</h3>
+            <span className="muted">{money(sum(awaiting))}</span>
+          </div>
+          <div className="list stagger">
+            {awaiting.map(({ pay, project }) => (
+              <button key={pay.id} className="row" onClick={() => go(`projects/${project.id}`)}>
+                <span className="icon-tile warn">
+                  <Icon name="clock" />
+                </span>
+                <span className="grow">
+                  <span className="title" style={{ display: 'block' }}>
+                    {clientName(project.clientId)} · {pay.label}
+                  </span>
+                  <span className="sub" style={{ display: 'block' }}>
+                    Proof sent {ago(pay.proofAt)} — confirm to start the next phase
+                  </span>
+                </span>
+                <span className="money-amt">{money(pay.amount)}</span>
+                <Icon name="chevron" className="chev" />
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="section">
+        <div className="section-head">
+          <h3>Collected by month</h3>
+        </div>
+        <div className="trend">
+          {months.map((m) => (
+            <div key={m.key} className="trend-col" title={`${m.label}: ${money(m.total)}`}>
+              <span className="trend-val">{m.total > 0 ? money(m.total) : ''}</span>
+              <span className="trend-bar-wrap">
+                <span className={`trend-bar ${m.key === thisMonth ? 'now' : ''}`} style={{ height: `${Math.round((m.total / trendMax) * 100)}%` }} />
+              </span>
+              <span className="trend-label">{m.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h3>By client</h3>
+        </div>
+        <div className="client-money">
+          {clients.map((c) => (
+            <button key={c.cid} className="client-money-row" onClick={() => go(`clients/${c.cid}`)}>
+              <div className="cm-top">
+                <span className="cm-name">{clientName(c.cid)}</span>
+                <span className="cm-figs">
+                  <strong>{money(c.collected)}</strong>
+                  {c.owed > 0 && <em>{money(c.owed)} owed</em>}
+                </span>
+              </div>
+              <span className="cm-bar">
+                <span className="cm-seg paid" style={{ flexGrow: Math.max(0, c.collected) }} />
+                <span className="cm-seg owed" style={{ flexGrow: Math.max(0, c.owed) }} />
+                <span className="cm-seg rest" style={{ flexGrow: Math.max(0, clientMax - c.collected - c.owed) }} />
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {recent.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h3>Recent payments</h3>
+          </div>
+          <div className="list stagger">
+            {recent.map(({ pay, project }) => (
+              <button key={pay.id} className="row" onClick={() => go(`projects/${project.id}`)}>
+                <span className="icon-tile ok">
+                  <Icon name="check" />
+                </span>
+                <span className="grow">
+                  <span className="title" style={{ display: 'block' }}>
+                    {clientName(project.clientId)} · {pay.label}
+                  </span>
+                  <span className="sub" style={{ display: 'block' }}>
+                    Paid {ago(pay.paidAt)}
+                    {pay.method ? ` · ${pay.method}` : ''}
+                  </span>
+                </span>
+                <span className="money-amt ok">{money(pay.amount)}</span>
+              </button>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )
