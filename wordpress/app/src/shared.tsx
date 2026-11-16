@@ -54,7 +54,7 @@ export function assetTone(a: Asset): [string, string] {
   return ['warn', 'In review']
 }
 
-export function AssetRow({ asset, onOpen }: { asset: Asset; onOpen: () => void }) {
+export function AssetRow({ asset, onOpen, versions = 1 }: { asset: Asset; onOpen: () => void; versions?: number }) {
   const [tone, label] = assetTone(asset)
   const showThumb = asset.kind === 'image' && asset.hasFile && !asset.name.toLowerCase().endsWith('.svg') && !/heic|heif|tiff?/i.test(asset.name)
   return (
@@ -72,10 +72,63 @@ export function AssetRow({ asset, onOpen }: { asset: Asset; onOpen: () => void }
         </span>
         <span className="sub" style={{ display: 'block' }}>
           {CATEGORY_LABEL[asset.category] ?? asset.category} · {asset.kind === 'note' ? 'Note' : bytes(asset.size)} · {ago(asset.createdAt)}
+          {versions > 1 ? ` · v${versions}` : ''}
         </span>
       </span>
       <Pill tone={tone}>{label}</Pill>
     </button>
+  )
+}
+
+/** Latest files grouped by category, newest first within each — a clean per-project deliverables hub. */
+export function FilesHub({ project, onOpen }: { project: Project; onOpen: (a: Asset) => void }) {
+  const byId = new Map(project.assets.map((a) => [a.id, a]))
+  const latest = project.assets.filter((a) => !project.assets.some((n) => n.versionOf === a.id))
+  const versionsOf = (a: Asset) => {
+    let n = 1
+    let cur: Asset | undefined = a
+    while (cur?.versionOf) {
+      cur = byId.get(cur.versionOf)
+      if (!cur) break
+      n++
+    }
+    return n
+  }
+  const order = [...boot.brand.categories, 'payments', 'notes']
+  const rank = (k: string) => {
+    const i = order.indexOf(k)
+    return i === -1 ? order.length : i
+  }
+  const groups = new Map<string, Asset[]>()
+  for (const a of latest) {
+    const k = a.category || 'other'
+    if (!groups.has(k)) groups.set(k, [])
+    groups.get(k)!.push(a)
+  }
+  const keys = [...groups.keys()].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+  return (
+    <div className="files-hub">
+      {keys.map((k) => {
+        const items = groups.get(k)!
+        const waiting = items.filter((a) => a.status === 'pending').length
+        return (
+          <div key={k} className="file-group">
+            <div className="file-group-head">
+              <span className="eyebrow">{CATEGORY_LABEL[k] ?? k}</span>
+              <span className="file-group-meta">
+                {waiting > 0 && <span className="file-group-wait">{waiting} to review</span>}
+                <span className="file-group-count">{items.length}</span>
+              </span>
+            </div>
+            <div className="list stagger">
+              {items.map((a) => (
+                <AssetRow key={a.id} asset={a} versions={versionsOf(a)} onOpen={() => onOpen(a)} />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }
 

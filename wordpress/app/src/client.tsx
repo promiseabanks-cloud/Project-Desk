@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ago, api, boot, currentPhase, date, money, type Asset, type Doc, type Payment, type Phase, type PortalData, type Project } from './api'
 import { go, type Route } from './router'
-import { AssetRow, AssetSheet, ClientPaymentCard, DocumentSheet, ProofSheet, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
+import { AssetSheet, ClientPaymentCard, DocumentSheet, FilesHub, ProofSheet, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
 import { BrandMark, Button, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skeleton, toast, useScrolled, useTheme } from './ui'
 
 type Sheets =
@@ -381,11 +381,8 @@ function ProjectView({
         />
       </div>
       {tab === 'files' ? (
-        <div className="list stagger" key="files">
-          {latest.length === 0 && <Empty icon="upload">Nothing shared yet. Send your brief, brand files or photos with the button below.</Empty>}
-          {latest.map((a) => (
-            <AssetRow key={a.id} asset={a} onOpen={() => open({ kind: 'asset', asset: a })} />
-          ))}
+        <div key="files">
+          {latest.length === 0 ? <Empty icon="upload">Nothing shared yet. Send your brief, brand files or photos with the button below.</Empty> : <FilesHub project={project} onOpen={(a) => open({ kind: 'asset', asset: a })} />}
         </div>
       ) : tab === 'messages' ? (
         <Thread project={project} me="client" onSent={reload} canWrite={!preview} key="messages" />
