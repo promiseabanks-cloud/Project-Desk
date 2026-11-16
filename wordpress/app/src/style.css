@@ -1663,3 +1663,19 @@ select option { background: var(--bg); color: var(--fg); }
 .file-group-meta { display: inline-flex; align-items: center; gap: 8px; }
 .file-group-wait { font-size: 0.72rem; font-weight: 600; color: var(--warn); background: var(--warn-soft); padding: 3px 8px; border-radius: 999px; }
 .file-group-count { font: 600 0.74rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* First-run setup wizard */
+.setup { min-height: 100dvh; display: grid; place-items: center; padding: calc(var(--safe-t) + 24px) 20px calc(var(--safe-b) + 24px); background: linear-gradient(160deg, var(--lagoon), var(--bg) 60%); }
+.setup-card { width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow-lift); animation: sheet-in 0.6s var(--ease-out) both; }
+.setup-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.setup-prog { display: flex; gap: 6px; margin-bottom: 18px; }
+.setup-prog span { flex: 1; height: 4px; border-radius: 999px; background: var(--tint-2); transition: background var(--dur) var(--ease-out); }
+.setup-prog span.on { background: var(--accent); }
+.setup-title { font-size: 1.6rem; }
+.setup-blurb { margin: 6px 0 18px; font-size: 0.9rem; }
+.setup-body { display: grid; gap: 2px; animation: rise 0.4s var(--ease-out) both; }
+.setup-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.setup-actions .btn { min-width: 110px; justify-content: center; }
+.color-field { display: flex; gap: 10px; align-items: center; }
+.color-field input[type='color'] { width: 44px; height: 42px; padding: 2px; border-radius: var(--r); border: 1px solid var(--line); background: none; flex: none; cursor: pointer; }
+.color-field input:not([type='color']) { flex: 1; min-width: 0; }

@@ -22,6 +22,7 @@ export type Boot = {
   user: { id: number; name: string; email: string } | null
   role: Role | null
   can?: { money: boolean; settings: boolean; staff: boolean; override: boolean }
+  setupNeeded?: boolean
 }
 
 export type Phase = {

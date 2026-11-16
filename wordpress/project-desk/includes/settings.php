@@ -153,6 +153,7 @@ function pd_settings(): array {
 		'business_website'  => home_url( '/' ),
 		'tagline'           => pd_theme_detail( 'tagline' ),
 		'email_logo_url'    => '',
+		'setup_complete'    => false,
 	);
 	$saved = get_option( 'pd_settings', array() );
 	return array_merge( $defaults, is_array( $saved ) ? $saved : array() );
@@ -244,6 +245,9 @@ function pd_update_settings( array $input ) {
 	}
 	if ( isset( $input['bankDetails'] ) ) {
 		$s['bank_details'] = pd_textarea( $input['bankDetails'], 2000 );
+	}
+	if ( isset( $input['setupComplete'] ) ) {
+		$s['setup_complete'] = (bool) $input['setupComplete'];
 	}
 	if ( isset( $input['agreement'] ) ) {
 		$s['agreement'] = pd_textarea( $input['agreement'], 50000 ) ?: pd_default_agreement();
