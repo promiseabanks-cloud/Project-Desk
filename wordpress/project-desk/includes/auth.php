@@ -120,6 +120,14 @@ function pd_boot_payload(): array {
 			'staff'    => user_can( $user, 'pd_manage_staff' ),
 			'override' => user_can( $user, 'pd_override_gates' ),
 		);
+		// A fresh install (owner, nothing set up and no clients yet) gets the setup wizard.
+		if ( user_can( $user, 'pd_manage_settings' ) && ! pd_settings()['setup_complete'] ) {
+			global $wpdb;
+			$has_clients = (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . pd_table( 'clients' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! $has_clients ) {
+				$out['setupNeeded'] = true;
+			}
+		}
 	}
 	return $out;
 }

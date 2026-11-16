@@ -23,11 +23,16 @@ const can = new Proxy({} as NonNullable<typeof boot.can>, { get: (_, key: string
 export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => void }) {
   const { data, reload, error } = useLoad<ConsoleData>('/console')
   const [sheet, setSheet] = useState<Sheets>(null)
+  const [setupDone, setSetupDone] = useState(false)
   const [section, id] = route.path
 
   // Portal preview: #/clients/:id/portal/...
   if (section === 'clients' && id && route.path[2] === 'portal') {
     return <ClientApp route={{ ...route, path: ['clients', id, ...route.path.slice(3)] }} clientId={Number(id)} />
+  }
+  // First run: walk a new owner through setting up their business.
+  if (boot.setupNeeded && can.settings && !setupDone) {
+    return <SetupWizard onDone={() => { setSetupDone(true); reload() }} />
   }
   if (error && !data) return <Empty icon="alert">{error}</Empty>
   if (!data) return <Skeleton />
@@ -1176,6 +1181,190 @@ type SettingsData = {
   bankDetails: string
   invoiceVat: boolean
   invoiceNaija: boolean
+}
+
+/** First-run wizard: walks a new owner through the essentials, then marks setup complete. */
+function SetupWizard({ onDone }: { onDone: () => void }) {
+  const [s, setS] = useState<SettingsData | null>(null)
+  const [step, setStep] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(() => {
+    api<SettingsData>('/settings').then(setS)
+  }, [])
+  if (!s) return <div className="setup"><div className="setup-card"><Skeleton /></div></div>
+  const upd = (patch: Partial<SettingsData>) => setS({ ...s, ...patch })
+
+  const steps: { title: string; blurb: string; body: React.ReactNode }[] = [
+    {
+      title: 'Your business',
+      blurb: 'The basics clients see first.',
+      body: (
+        <>
+          <Field label="Business name">
+            <input value={s.businessName} onChange={(e) => upd({ businessName: e.target.value })} placeholder="Acme Studio" />
+          </Field>
+          <div className="grid-2">
+            <Field label="Currency" hint="Three-letter code, e.g. NGN, USD.">
+              <input value={s.currency} maxLength={3} onChange={(e) => upd({ currency: e.target.value.toUpperCase() })} />
+            </Field>
+            <Field label="Website">
+              <input value={s.businessWebsite} onChange={(e) => upd({ businessWebsite: e.target.value })} placeholder="https://" />
+            </Field>
+          </div>
+        </>
+      ),
+    },
+    {
+      title: 'Your look',
+      blurb: 'Your brand across the portal and emails.',
+      body: (
+        <>
+          <Field label="Brand colour" hint="A hex colour such as #0f6b4f.">
+            <div className="color-field">
+              <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(s.brandColor) ? s.brandColor : '#0b3b40'} onChange={(e) => upd({ brandColor: e.target.value })} />
+              <input value={s.brandColor} onChange={(e) => upd({ brandColor: e.target.value })} />
+            </div>
+          </Field>
+          <Field label="Logo URL" hint="Leave empty to use the built-in mark for now.">
+            <input value={s.logoUrl} onChange={(e) => upd({ logoUrl: e.target.value })} placeholder="https://…/logo.svg" />
+          </Field>
+        </>
+      ),
+    },
+    {
+      title: 'Getting paid',
+      blurb: 'How deposits and invoices work.',
+      body: (
+        <>
+          <div className="grid-2">
+            <Field label="Deposit %" hint="Pre-filled when you onboard a client.">
+              <input type="number" min={0} max={100} value={s.depositPercent} onChange={(e) => upd({ depositPercent: Number(e.target.value) })} />
+            </Field>
+            <Field label="Invoices due after (days)">
+              <input type="number" min={0} max={90} value={s.invoiceDueDays} onChange={(e) => upd({ invoiceDueDays: Number(e.target.value) })} />
+            </Field>
+          </div>
+          {s.invoiceNaija ? (
+            <p className="hint">InvoiceNaija is connected, so it raises and emails invoices with its own bank accounts and pay page.</p>
+          ) : (
+            <Field label="Bank details for invoices" hint="Shown in invoice emails. Account name, bank and number.">
+              <textarea value={s.bankDetails} onChange={(e) => upd({ bankDetails: e.target.value })} placeholder={'Account name\nBank\n0000000000'} />
+            </Field>
+          )}
+        </>
+      ),
+    },
+    {
+      title: 'Contact & emails',
+      blurb: 'These sign off every email the portal sends.',
+      body: (
+        <>
+          <div className="grid-2">
+            <Field label="Legal name">
+              <input value={s.legalName} onChange={(e) => upd({ legalName: e.target.value })} placeholder={s.businessName} />
+            </Field>
+            <Field label="RC number">
+              <input value={s.rcNumber} onChange={(e) => upd({ rcNumber: e.target.value })} />
+            </Field>
+            <Field label="Email">
+              <input type="email" value={s.businessEmail} onChange={(e) => upd({ businessEmail: e.target.value })} />
+            </Field>
+            <Field label="Phone">
+              <input type="tel" value={s.businessPhone} onChange={(e) => upd({ businessPhone: e.target.value })} />
+            </Field>
+          </div>
+          <Field label="Address">
+            <input value={s.businessAddress} onChange={(e) => upd({ businessAddress: e.target.value })} />
+          </Field>
+          <Field label="Tagline">
+            <input value={s.tagline} onChange={(e) => upd({ tagline: e.target.value })} placeholder="What you do, in a few words" />
+          </Field>
+        </>
+      ),
+    },
+  ]
+
+  const finish = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await api('/settings', {
+        method: 'PUT',
+        body: {
+          businessName: s.businessName,
+          currency: s.currency,
+          businessWebsite: s.businessWebsite,
+          brandColor: s.brandColor,
+          logoUrl: s.logoUrl,
+          depositPercent: s.depositPercent,
+          invoiceDueDays: s.invoiceDueDays,
+          bankDetails: s.bankDetails,
+          legalName: s.legalName,
+          rcNumber: s.rcNumber,
+          businessEmail: s.businessEmail,
+          businessPhone: s.businessPhone,
+          businessAddress: s.businessAddress,
+          tagline: s.tagline,
+          setupComplete: true,
+        },
+      })
+      toast('All set', `${s.businessName} is ready to onboard clients.`)
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+  const skip = async () => {
+    setBusy(true)
+    try {
+      await api('/settings', { method: 'PUT', body: { setupComplete: true } })
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+      setBusy(false)
+    }
+  }
+
+  const last = step === steps.length - 1
+  return (
+    <div className="setup">
+      <div className="setup-card">
+        <div className="setup-top">
+          <span className="eyebrow">Welcome</span>
+          <button className="link-btn" onClick={skip} disabled={busy}>Skip for now</button>
+        </div>
+        <div className="setup-prog" aria-hidden>
+          {steps.map((_, i) => (
+            <span key={i} className={i <= step ? 'on' : ''} />
+          ))}
+        </div>
+        <h1 className="setup-title">{steps[step].title}</h1>
+        <p className="muted setup-blurb">{steps[step].blurb}</p>
+        {error && <div className="form-error">{error}</div>}
+        <div className="setup-body" key={step}>
+          {steps[step].body}
+        </div>
+        <div className="setup-actions">
+          {step > 0 && (
+            <Button variant="ghost" icon="back" onClick={() => setStep(step - 1)} disabled={busy}>
+              Back
+            </Button>
+          )}
+          {last ? (
+            <Button variant="accent" icon="sparkle" onClick={finish} disabled={busy || !s.businessName}>
+              {busy ? 'Saving…' : 'Finish setup'}
+            </Button>
+          ) : (
+            <Button variant="accent" onClick={() => setStep(step + 1)} disabled={step === 0 && !s.businessName}>
+              Continue
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function SettingsView() {

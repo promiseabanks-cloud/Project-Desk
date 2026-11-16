@@ -563,6 +563,7 @@ function pd_register_routes(): void {
 				'bankDetails'     => $s['bank_details'],
 				'invoiceVat'      => (bool) $s['invoice_vat'],
 				'invoiceNaija'    => pd_invoicenaija_active(),
+				'setupComplete'   => (bool) $s['setup_complete'],
 			);
 		},
 		'pd_can_settings'
