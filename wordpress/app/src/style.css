@@ -1656,3 +1656,10 @@ select option { background: var(--bg); color: var(--fg); }
   h3 { font-size: 0.93rem; }
   .money-hero-figure { font-size: clamp(2rem, 8vw, 2.6rem); }
 }
+
+/* Files / deliverables hub */
+.files-hub { display: grid; gap: 22px; }
+.file-group-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding-bottom: 6px; margin-bottom: 2px; border-bottom: 1px solid var(--line); }
+.file-group-meta { display: inline-flex; align-items: center; gap: 8px; }
+.file-group-wait { font-size: 0.72rem; font-weight: 600; color: var(--warn); background: var(--warn-soft); padding: 3px 8px; border-radius: 999px; }
+.file-group-count { font: 600 0.74rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }

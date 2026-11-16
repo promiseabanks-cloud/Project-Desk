@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Payment, type Phase, type Project, type ServiceDef } from './api'
 import { ClientApp, ProjectRow, Shell } from './client'
 import { go, type Route } from './router'
-import { AssetRow, AssetSheet, DocumentSheet, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
+import { AssetRow, AssetSheet, DocumentSheet, FilesHub, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
 import { Button, CountUp, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skeleton, toast } from './ui'
 
 type Sheets =
@@ -451,18 +451,16 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
       </div>
       {tab === 'files' ? (
         <div key="files">
-          <div className="between" style={{ marginBottom: 10 }}>
-            <span className="muted">{latest.filter((a) => a.status === 'pending').length} waiting for review</span>
+          <div className="between" style={{ marginBottom: 14 }}>
+            <span className="muted">
+              {latest.length} file{latest.length === 1 ? '' : 's'}
+              {latest.filter((a) => a.status === 'pending').length > 0 ? ` · ${latest.filter((a) => a.status === 'pending').length} to review` : ''}
+            </span>
             <Button variant="ghost small" icon="upload" onClick={() => open({ kind: 'upload', project })}>
               Share a file
             </Button>
           </div>
-          <div className="list stagger">
-            {latest.length === 0 && <Empty icon="upload">No files yet.</Empty>}
-            {latest.map((a) => (
-              <AssetRow key={a.id} asset={a} onOpen={() => open({ kind: 'asset', asset: a })} />
-            ))}
-          </div>
+          {latest.length === 0 ? <Empty icon="upload">No files yet. Share a deliverable or ask the client for what you need.</Empty> : <FilesHub project={project} onOpen={(a) => open({ kind: 'asset', asset: a })} />}
         </div>
       ) : tab === 'money' ? (
         <div key="money">
