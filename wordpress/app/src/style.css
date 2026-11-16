@@ -1664,6 +1664,17 @@ select option { background: var(--bg); color: var(--fg); }
 .file-group-wait { font-size: 0.72rem; font-weight: 600; color: var(--warn); background: var(--warn-soft); padding: 3px 8px; border-radius: 999px; }
 .file-group-count { font: 600 0.74rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* Leads inbox */
+.lead-card { display: grid; gap: 12px; }
+.lead-top { display: flex; align-items: flex-start; gap: 10px; }
+.lead-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 0.86rem; }
+.lead-meta a, .lead-meta span { color: var(--muted); }
+.lead-meta a { color: var(--accent); text-decoration: none; font-weight: 600; }
+.lead-meta a:hover { text-decoration: underline; }
+.lead-msg { margin: 0; padding: 12px 14px; background: var(--tint-2); border-radius: 10px; font-size: 0.92rem; line-height: 1.5; white-space: pre-wrap; }
+.lead-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.lead-actions .btn { flex: 0 0 auto; }
+
 /* First-run setup wizard */
 .setup { min-height: 100dvh; display: grid; place-items: center; padding: calc(var(--safe-t) + 24px) 20px calc(var(--safe-b) + 24px); background: linear-gradient(160deg, var(--lagoon), var(--bg) 60%); }
 .setup-card { width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow-lift); animation: sheet-in 0.6s var(--ease-out) both; }

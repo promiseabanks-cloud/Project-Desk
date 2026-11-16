@@ -143,7 +143,33 @@ function pd_register_routes(): void {
 				'documents'     => pd_load_documents( 0, true ),
 				'notifications' => pd_load_notifications( 'staff' ),
 				'services'      => pd_settings()['services'],
+				'leads'         => pd_load_leads(),
 			);
+		},
+		'pd_can_staff'
+	);
+
+	/* -------------------------------------------------- public intake: leads */
+
+	// A prospective client submits the public enquiry form. No sign-in.
+	pd_route(
+		'/leads',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			$result = pd_submit_lead( pd_json_body( $r ) );
+			return is_wp_error( $result ) ? $result : $result;
+		},
+		$public
+	);
+
+	// The team moves a lead along (contacted, converted, archived).
+	pd_route(
+		'/leads/(?P<id>\d+)',
+		'PATCH',
+		static function ( WP_REST_Request $r ) {
+			$b      = pd_json_body( $r );
+			$result = pd_update_lead( (int) $r['id'], (string) ( $b['status'] ?? '' ), (int) ( $b['clientId'] ?? 0 ) );
+			return is_wp_error( $result ) ? $result : $result;
 		},
 		'pd_can_staff'
 	);

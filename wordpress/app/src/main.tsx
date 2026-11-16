@@ -1,6 +1,7 @@
 import { StrictMode, useCallback, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { api, boot, setNonce, type Boot } from './api'
+import { ApplyForm } from './apply'
 import { AcceptInvite, MagicLink, SignIn } from './auth'
 import { ClientApp } from './client'
 import { go, useRoute } from './router'
@@ -31,6 +32,7 @@ function App() {
   const [first] = route.path
   if (first === 'invite') return <AcceptInvite route={route} onDone={signedIn} />
   if (first === 'magic') return <MagicLink route={route} onDone={signedIn} />
+  if (first === 'apply') return <ApplyForm />
   if (!session.user) return <SignIn onDone={signedIn} />
   if (session.role === 'owner' || session.role === 'manager') return <StaffApp key={session.user.id} route={route} onSignOut={signOut} />
   return <ClientApp key={session.user.id} route={route} onSignOut={signOut} />

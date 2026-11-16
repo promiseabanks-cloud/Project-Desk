@@ -155,6 +155,22 @@ function pd_schema(): array {
 			PRIMARY KEY  (id),
 			KEY project_id (project_id)
 		) $c;",
+		'CREATE TABLE ' . pd_table( 'leads' ) . " (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			company varchar(160) NOT NULL DEFAULT '',
+			contact_name varchar(160) NOT NULL,
+			email varchar(200) NOT NULL,
+			phone varchar(40) NOT NULL DEFAULT '',
+			service varchar(40) NOT NULL DEFAULT '',
+			budget varchar(60) NOT NULL DEFAULT '',
+			message text NULL,
+			source varchar(40) NOT NULL DEFAULT 'form',
+			status varchar(20) NOT NULL DEFAULT 'new',
+			client_id bigint(20) unsigned NULL,
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			KEY status (status)
+		) $c;",
 		'CREATE TABLE ' . pd_table( 'notifications' ) . " (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			audience varchar(20) NOT NULL,
