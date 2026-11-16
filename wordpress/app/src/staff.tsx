@@ -658,18 +658,21 @@ function PriceFields({ price, pct, onChange }: { price: string; pct: string; onC
   const p = Math.max(0, Math.min(100, Number(pct) || 0))
   return (
     <div className="money-fields">
-      <div className="grid-2">
-        <Field label={`Project price (${boot.brand.currency})`}>
-          <input inputMode="decimal" value={price} onChange={(e) => onChange(e.target.value, pct)} placeholder="1,500,000" />
+      <div className="price-grid">
+        <Field label={`Project price (${boot.brand.currency})`} hint="The agreement states this figure.">
+          <input className="price-big" inputMode="decimal" value={price} onChange={(e) => onChange(e.target.value, pct)} placeholder="1,500,000" />
         </Field>
-        <Field label="Deposit %">
-          <input inputMode="numeric" value={pct} onChange={(e) => onChange(price, e.target.value.replace(/[^0-9]/g, '').slice(0, 3))} />
+        <Field label="Deposit %" hint="Billed on signing.">
+          <div className="pct-box">
+            <input inputMode="numeric" value={pct} onChange={(e) => onChange(price, e.target.value.replace(/[^0-9]/g, '').slice(0, 3))} />
+            <i>%</i>
+          </div>
         </Field>
       </div>
       <p className="hint">
         {amount > 0 ? (
           <>
-            The agreement states the price. When it is signed, a <strong>{money(Math.round(amount * p))}</strong> deposit invoice goes to the client automatically.
+            When the agreement is signed, a <strong>{money(Math.round(amount * p))}</strong> deposit invoice goes to the client automatically.
           </>
         ) : (
           'Optional. With a price, the deposit invoice goes out automatically once the agreement is signed.'
@@ -698,24 +701,43 @@ function MilestonePlanner({
 }) {
   const amount = naira(price)
   const dep = pctOf(deposit)
-  const sum = dep + phases.reduce((t, _p, i) => t + pctOf(milestones[i] ?? ''), 0)
+  const billed = phases.map((_p, i) => pctOf(milestones[i] ?? ''))
+  const sum = dep + billed.reduce((t, v) => t + v, 0)
+  const rest = Math.max(0, 100 - sum)
+  const state = sum === 100 ? 'ok' : sum > 100 ? 'over' : 'under'
   return (
-    <div className="money-fields">
-      <div className="eyebrow" style={{ marginBottom: 6 }}>
-        Payment milestones
+    <div className="ms-planner">
+      <div className="ms-planner-head">
+        <div className="eyebrow">Payment schedule</div>
+        <span className={`ms-badge ${state}`}>{sum}% of price</span>
       </div>
-      <p className="hint">The deposit is billed on signing. Put a % on any phase to bill it when that phase is completed — the next phase then waits until it is paid.</p>
-      <div className="milestones">
-        <div className="ms-row ms-fixed">
-          <span className="grow">Deposit — on signing</span>
+      <p className="hint">Deposit bills on signing. Give any phase a share to bill it when that phase completes — the next phase then waits until it is paid.</p>
+      <div className="ms-bar" role="img" aria-label={`${sum}% of the price assigned to payments`}>
+        {dep > 0 && (
+          <span className="seg dep" style={{ flexGrow: dep }} title={`Deposit — ${dep}%`} />
+        )}
+        {billed.map((v, i) => (v > 0 ? <span key={i} className="seg mile" style={{ flexGrow: v }} title={`${phases[i].name} — ${v}%`} /> : null))}
+        {rest > 0 && <span className="seg rest" style={{ flexGrow: rest }} />}
+      </div>
+      <div className="ms-list">
+        <div className="ms-item fixed">
+          <span className="dot dep" />
+          <span className="ms-name">
+            Deposit
+            <i>on signing</i>
+          </span>
           <span className="ms-pct">{dep}%</span>
-          {amount > 0 && <span className="ms-amt">{money(Math.round(amount * dep))}</span>}
+          <span className="ms-amt">{amount > 0 ? money(Math.round(amount * dep)) : '—'}</span>
         </div>
         {phases.map((p, i) => {
-          const v = pctOf(milestones[i] ?? '')
+          const v = billed[i]
           return (
-            <div key={i} className="ms-row">
-              <span className="grow">{p.name}</span>
+            <div key={i} className={`ms-item ${v > 0 ? 'on' : ''}`}>
+              <span className={`dot ${v > 0 ? 'mile' : 'off'}`} />
+              <span className="ms-name">
+                {p.name}
+                {p.signoff ? <i>sign-off</i> : null}
+              </span>
               <span className="ms-input">
                 <input
                   inputMode="numeric"
@@ -731,9 +753,8 @@ function MilestonePlanner({
           )
         })}
       </div>
-      <p className={`hint ms-total ${sum === 100 ? 'ok' : 'warn'}`}>
-        {sum === 100 ? 'All ' : ''}
-        {sum}% of the price billed{sum < 100 ? ` — ${100 - sum}% not yet assigned` : sum > 100 ? ` — ${sum - 100}% over` : ''}
+      <p className={`ms-total ${state}`}>
+        {state === 'ok' ? '✓ Fully scheduled — 100% of the price assigned.' : state === 'over' ? `${sum - 100}% over the price — trim a milestone.` : `${rest}% not yet assigned.`}
       </p>
     </div>
   )
