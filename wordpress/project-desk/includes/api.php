@@ -144,6 +144,8 @@ function pd_register_routes(): void {
 				'notifications' => pd_load_notifications( 'staff' ),
 				'services'      => pd_settings()['services'],
 				'leads'         => pd_load_leads(),
+				'tasks'         => pd_load_tasks(),
+				'team'          => pd_team_roster(),
 			);
 		},
 		'pd_can_staff'
@@ -170,6 +172,35 @@ function pd_register_routes(): void {
 			$b      = pd_json_body( $r );
 			$result = pd_update_lead( (int) $r['id'], (string) ( $b['status'] ?? '' ), (int) ( $b['clientId'] ?? 0 ) );
 			return is_wp_error( $result ) ? $result : $result;
+		},
+		'pd_can_staff'
+	);
+
+	/* ----------------------------------------------------- team: tasks */
+
+	pd_route(
+		'/tasks',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			$result = pd_create_task( pd_json_body( $r ) );
+			return is_wp_error( $result ) ? $result : new WP_REST_Response( array( 'taskId' => $result ), 201 );
+		},
+		'pd_can_staff'
+	);
+	pd_route(
+		'/tasks/(?P<id>\d+)',
+		'PATCH',
+		static function ( WP_REST_Request $r ) {
+			$result = pd_update_task( (int) $r['id'], pd_json_body( $r ) );
+			return is_wp_error( $result ) ? $result : $result;
+		},
+		'pd_can_staff'
+	);
+	pd_route(
+		'/tasks/(?P<id>\d+)',
+		'DELETE',
+		static function ( WP_REST_Request $r ) {
+			return pd_delete_task( (int) $r['id'] ) ? array( 'ok' => true ) : pd_error( 'Task not found.', 404 );
 		},
 		'pd_can_staff'
 	);

@@ -395,6 +395,24 @@ call( 'PATCH', '/leads/' . $lead_id, array( 'status' => 'converted', 'clientId' 
 $lead_conv = pd_get_row( 'leads', $lead_id );
 check( 'lead: converting links the client', 'converted' === $lead_conv['status'] && (int) $lead_conv['client_id'] === $some_client );
 
+/* Team tasks: assign, see workload in the console, move along, clean up. */
+as_user( $owner );
+$task = data( call( 'POST', '/tasks', array( 'title' => 'Draft the proposal', 'assigneeId' => $owner, 'projectId' => (int) $pp['projectId'], 'priority' => 'high', 'dueDate' => '2026-12-01' ) ) );
+$task_id = (int) ( $task['taskId'] ?? 0 );
+check( 'task: created', $task_id > 0 && 'todo' === pd_get_row( 'tasks', $task_id )['status'] );
+$console = data( call( 'GET', '/console' ) );
+check( 'task: console lists it with a team roster', (bool) array_filter( $console['tasks'], static fn( $t ) => $t['id'] === $task_id ) && ! empty( $console['team'] ) );
+check( 'task: assignee resolved to a name', (bool) array_filter( $console['tasks'], static fn( $t ) => $t['id'] === $task_id && '' !== $t['assigneeName'] ) );
+$t_done = data( call( 'PATCH', '/tasks/' . $task_id, array( 'status' => 'done' ) ) );
+check( 'task: completing sets status and timestamp', 'done' === $t_done['status'] && null !== pd_get_row( 'tasks', $task_id )['completed_at'] );
+// A client user cannot be an assignee, and a client cannot create tasks.
+$bad = data( call( 'POST', '/tasks', array( 'title' => 'Not staff', 'assigneeId' => $pat->ID ) ) );
+check( 'task: a client cannot be assigned', null === pd_get_row( 'tasks', (int) $bad['taskId'] )['assignee_id'] );
+as_user( $pat->ID );
+check( 'task: client cannot create tasks', 403 === call( 'POST', '/tasks', array( 'title' => 'Sneaky' ) )->get_status() );
+as_user( $owner );
+check( 'task: can be deleted', isset( data( call( 'DELETE', '/tasks/' . $task_id ) )['ok'] ) && null === pd_get_row( 'tasks', $task_id ) );
+
 /* InvoiceNaija, with a stand-in for the plugin's classes. */
 if ( ! class_exists( 'INAIJA_Invoices' ) ) {
 	class INAIJA_Settings {

@@ -171,6 +171,23 @@ function pd_schema(): array {
 			PRIMARY KEY  (id),
 			KEY status (status)
 		) $c;",
+		'CREATE TABLE ' . pd_table( 'tasks' ) . " (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			project_id bigint(20) unsigned NULL,
+			title varchar(200) NOT NULL,
+			details text NULL,
+			assignee_id bigint(20) unsigned NULL,
+			status varchar(20) NOT NULL DEFAULT 'todo',
+			priority varchar(20) NOT NULL DEFAULT 'normal',
+			due_date date NULL,
+			position int(11) NOT NULL DEFAULT 0,
+			created_by bigint(20) unsigned NULL,
+			created_at datetime NOT NULL,
+			completed_at datetime NULL,
+			PRIMARY KEY  (id),
+			KEY project_id (project_id),
+			KEY assignee_id (assignee_id)
+		) $c;",
 		'CREATE TABLE ' . pd_table( 'notifications' ) . " (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			audience varchar(20) NOT NULL,
