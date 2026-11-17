@@ -1691,6 +1691,27 @@ select option { background: var(--bg); color: var(--fg); }
 .btn.chip.warn { background: var(--warn-soft); color: var(--warn); }
 .btn.chip.ok { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
 
+/* Studio insights */
+.split-bar { display: flex; height: 12px; border-radius: 999px; overflow: hidden; background: var(--tint-2); margin: 14px 0 10px; }
+.split-bar span { display: block; height: 100%; }
+.split-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.82rem; color: var(--muted); }
+.split-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.split-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.insight-ring { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+.sat-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.sat-score { font: 700 2rem/1 var(--head); }
+.stars { display: inline-flex; gap: 2px; }
+.stars svg { width: 18px; height: 18px; }
+.stars.small svg { width: 14px; height: 14px; }
+.star-on { color: var(--signal); fill: var(--signal); }
+.star-off { color: var(--line); }
+.load-bars { display: grid; gap: 10px; }
+.load-row { display: flex; align-items: center; gap: 10px; }
+.load-name { flex: 0 0 72px; font-size: 0.86rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.load-track { flex: 1; height: 10px; background: var(--tint-2); border-radius: 999px; overflow: hidden; }
+.load-track i { display: block; height: 100%; background: var(--accent); border-radius: 999px; min-width: 3px; transition: width 0.5s var(--ease-out); }
+.load-n { flex: 0 0 auto; font: 600 0.82rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
 /* First-run setup wizard */
 .setup { min-height: 100dvh; display: grid; place-items: center; padding: calc(var(--safe-t) + 24px) 20px calc(var(--safe-b) + 24px); background: linear-gradient(160deg, var(--lagoon), var(--bg) 60%); }
 .setup-card { width: 100%; max-width: 460px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 24px; box-shadow: var(--shadow-lift); animation: sheet-in 0.6s var(--ease-out) both; }
