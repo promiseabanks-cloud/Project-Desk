@@ -147,6 +147,22 @@ export type Lead = {
   createdAt: string
 }
 
+export type Task = {
+  id: number
+  projectId: number | null
+  title: string
+  details: string
+  assigneeId: number | null
+  assigneeName: string
+  status: 'todo' | 'doing' | 'done'
+  priority: 'low' | 'normal' | 'high'
+  dueDate: string | null
+  createdAt: string
+  completedAt: string | null
+}
+
+export type TeamMember = { id: number; name: string }
+
 export type Notice = { id: number; projectId: number | null; title: string; body: string; createdAt: string; read: boolean }
 
 export type ServiceDef = { label: string; recurring: boolean; phases: { name: string; signoff: boolean }[] }
@@ -159,6 +175,8 @@ export type ConsoleData = {
   notifications: Notice[]
   services: Record<string, ServiceDef>
   leads: Lead[]
+  tasks: Task[]
+  team: TeamMember[]
 }
 
 declare global {

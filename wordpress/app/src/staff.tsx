@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Lead, type Payment, type Phase, type Project, type ServiceDef } from './api'
+import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Lead, type Payment, type Phase, type Project, type ServiceDef, type Task } from './api'
 import { ClientApp, ProjectRow, Shell } from './client'
 import { go, type Route } from './router'
 import { AssetRow, AssetSheet, DocumentSheet, FilesHub, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
@@ -8,6 +8,7 @@ import { Button, CountUp, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skel
 type Sheets =
   | { kind: 'onboard' }
   | { kind: 'convert'; lead: Lead }
+  | { kind: 'task'; task?: Task; projectId?: number }
   | { kind: 'asset'; asset: Asset }
   | { kind: 'doc'; doc: Doc }
   | { kind: 'newdoc'; client: Client; projectId?: number }
@@ -47,6 +48,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
   const clientName = (cid: number) => data.clients.find((c) => c.id === cid)?.company ?? ''
   const unread = data.notifications.filter((n) => !n.read).length
   const newLeads = (data.leads ?? []).filter((l) => l.status === 'new').length
+  const openTasks = (data.tasks ?? []).filter((t) => t.status !== 'done').length
 
   let body: React.ReactNode
   if (section === 'projects' && id) {
@@ -95,6 +97,8 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
     )
   } else if (section === 'leads') {
     body = <LeadsView data={data} reload={reload} open={setSheet} />
+  } else if (section === 'tasks') {
+    body = <TasksView data={data} reload={reload} open={setSheet} />
   } else if (section === 'money' && can.money) {
     body = <MoneyView data={data} />
   } else if (section === 'settings' && can.settings) {
@@ -207,6 +211,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
     ['projects', 'Projects', 'folder', false],
     ['review', 'Review', 'check', pendingAssets.length > 0],
     ['leads', 'Leads', 'mail', newLeads > 0],
+    ['tasks', 'Tasks', 'note', openTasks > 0],
     ...(can.money ? ([['money', 'Money', 'wallet', overdue.length > 0]] as [string, string, string, boolean][]) : []),
     ...(can.settings ? ([['settings', 'Settings', 'settings', false]] as [string, string, string, boolean][]) : []),
   ]
@@ -230,8 +235,14 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
           <Icon name="plus" /> Onboard client
         </button>
       )}
+      {section === 'tasks' && (
+        <button className="fab" onClick={() => setSheet({ kind: 'task' })}>
+          <Icon name="plus" /> New task
+        </button>
+      )}
       {sheet?.kind === 'onboard' && <OnboardSheet services={data.services} onClose={() => setSheet(null)} onDone={(cid) => (reload(), go(`clients/${cid}`))} />}
       {sheet?.kind === 'convert' && <OnboardSheet services={data.services} lead={sheet.lead} onClose={() => setSheet(null)} onDone={(cid) => (reload(), go(`clients/${cid}`))} />}
+      {sheet?.kind === 'task' && <TaskSheet task={sheet.task} projectId={sheet.projectId} data={data} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'asset' && <AssetSheet asset={sheet.asset} staff onClose={() => setSheet(null)} onChanged={reload} />}
       {sheet?.kind === 'doc' && <DocumentSheet doc={sheet.doc} canSign={false} onClose={() => setSheet(null)} />}
       {sheet?.kind === 'newdoc' && <NewDocSheet client={sheet.client} projects={data.projects.filter((p) => p.clientId === sheet.client.id)} onClose={() => setSheet(null)} onDone={reload} />}
@@ -805,6 +816,206 @@ function MoneyView({ data }: { data: ConsoleData }) {
         </section>
       )}
     </div>
+  )
+}
+
+const TASK_STATUS: Record<Task['status'], { label: string; tone: string; next: Task['status'] }> = {
+  todo: { label: 'To do', tone: '', next: 'doing' },
+  doing: { label: 'Doing', tone: 'warn', next: 'done' },
+  done: { label: 'Done', tone: 'ok', next: 'todo' },
+}
+function TaskRow({ task, projectName, onEdit, onCycle }: { task: Task; projectName: string; onEdit: () => void; onCycle: () => void | Promise<void> }) {
+  const due = task.dueDate ? new Date(task.dueDate + 'T00:00:00') : null
+  const overdue = due && task.status !== 'done' && due.getTime() < Date.now() - 86400e3
+  const st = TASK_STATUS[task.status]
+  return (
+    <div className={`row task-row${task.status === 'done' ? ' task-done' : ''}`}>
+      <button className="task-open grow" onClick={onEdit}>
+        <span className={`prio-dot prio-${task.priority}`} aria-hidden="true" />
+        <span className="grow">
+          <span className="title" style={{ display: 'block' }}>
+            {task.title}
+          </span>
+          <span className="sub" style={{ display: 'block' }}>
+            {[projectName, due ? `${overdue ? 'Overdue · ' : 'Due '}${date(task.dueDate)}` : ''].filter(Boolean).join(' · ') || 'No project'}
+          </span>
+        </span>
+      </button>
+      <Button variant={`chip ${st.tone}`} onClick={onCycle}>
+        {st.label}
+      </Button>
+    </div>
+  )
+}
+
+function TasksView({ data, reload, open }: { data: ConsoleData; reload: () => void; open: (s: Sheets) => void }) {
+  const tasks = data.tasks ?? []
+  const team = data.team ?? []
+  const [filter, setFilter] = useState<'open' | 'done' | 'all'>('open')
+  const projectName = (pid: number | null) => (pid ? (data.projects.find((p) => p.id === pid)?.name ?? '') : '')
+  const cycle = async (task: Task) => {
+    try {
+      await api(`/tasks/${task.id}`, { method: 'PATCH', body: { status: TASK_STATUS[task.status].next } })
+      reload()
+    } catch (e) {
+      toast('That did not work', (e as Error).message, 'bad')
+    }
+  }
+  const shown = tasks.filter((t) => (filter === 'all' ? true : filter === 'done' ? t.status === 'done' : t.status !== 'done'))
+  const openCount = (assigneeId: number | null) => tasks.filter((t) => t.status !== 'done' && t.assigneeId === assigneeId).length
+  // Group shown tasks by assignee, people with open work first, unassigned last.
+  const groups: { id: number | null; name: string }[] = [...team.map((m) => ({ id: m.id as number | null, name: m.name })), { id: null, name: 'Unassigned' }]
+    .filter((g) => shown.some((t) => t.assigneeId === g.id))
+    .sort((a, b) => openCount(b.id) - openCount(a.id))
+  return (
+    <div className="screen">
+      <header className="page-head">
+        <span className="eyebrow">Tasks</span>
+        <h1>{tasks.filter((t) => t.status !== 'done').length ? `${tasks.filter((t) => t.status !== 'done').length} open` : 'All clear'}</h1>
+        <p className="muted">Your team's own to-do list. Assign work, see who is carrying what, and tap a status to move it along. Clients never see these.</p>
+      </header>
+      {team.length > 0 && (
+        <div className="workload">
+          {team.map((m) => (
+            <div key={m.id} className="workload-chip">
+              <strong>{openCount(m.id)}</strong>
+              <span>{m.name.split(' ')[0]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Segmented
+        value={filter}
+        onChange={setFilter}
+        options={[
+          ['open', 'Open'],
+          ['done', 'Done'],
+          ['all', 'All'],
+        ]}
+      />
+      <div style={{ marginTop: 16, display: 'grid', gap: 18 }}>
+        {shown.length === 0 && <Empty icon="note">No tasks here. Add one with the button below.</Empty>}
+        {groups.map((g) => (
+          <section key={g.id ?? 'none'} className="section">
+            <div className="section-head">
+              <h3>{g.name}</h3>
+              <span className="file-group-count">{openCount(g.id)} open</span>
+            </div>
+            <div className="list">
+              {shown
+                .filter((t) => t.assigneeId === g.id)
+                .map((t) => (
+                  <TaskRow key={t.id} task={t} projectName={projectName(t.projectId)} onEdit={() => open({ kind: 'task', task: t })} onCycle={() => cycle(t)} />
+                ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function TaskSheet({ task, projectId, data, onClose, onDone }: { task?: Task; projectId?: number; data: ConsoleData; onClose: () => void; onDone: () => void }) {
+  const [f, setF] = useState({
+    title: task?.title ?? '',
+    details: task?.details ?? '',
+    assigneeId: task?.assigneeId ? String(task.assigneeId) : '',
+    projectId: task?.projectId ? String(task.projectId) : projectId ? String(projectId) : '',
+    priority: task?.priority ?? 'normal',
+    dueDate: task?.dueDate ?? '',
+    status: task?.status ?? 'todo',
+  })
+  const [error, setError] = useState('')
+  const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setF({ ...f, [k]: e.target.value })
+  const body = {
+    title: f.title,
+    details: f.details,
+    assigneeId: f.assigneeId ? Number(f.assigneeId) : 0,
+    projectId: f.projectId ? Number(f.projectId) : 0,
+    priority: f.priority,
+    dueDate: f.dueDate,
+    status: f.status,
+  }
+  const save = async () => {
+    setError('')
+    try {
+      if (task) await api(`/tasks/${task.id}`, { method: 'PATCH', body })
+      else await api('/tasks', { body })
+      onClose()
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  const remove = async () => {
+    if (!task) return
+    try {
+      await api(`/tasks/${task.id}`, { method: 'DELETE' })
+      onClose()
+      onDone()
+    } catch (e) {
+      setError((e as Error).message)
+    }
+  }
+  return (
+    <Sheet title={task ? 'Edit task' : 'New task'} onClose={onClose}>
+      {error && <div className="form-error">{error}</div>}
+      <Field label="Task">
+        <input value={f.title} onChange={set('title')} placeholder="What needs doing?" autoFocus />
+      </Field>
+      <div className="grid-2">
+        <Field label="Assign to">
+          <select value={f.assigneeId} onChange={set('assigneeId')}>
+            <option value="">Unassigned</option>
+            {(data.team ?? []).map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Project (optional)">
+          <select value={f.projectId} onChange={set('projectId')}>
+            <option value="">No project</option>
+            {data.projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Priority">
+          <select value={f.priority} onChange={set('priority')}>
+            <option value="high">High</option>
+            <option value="normal">Normal</option>
+            <option value="low">Low</option>
+          </select>
+        </Field>
+        <Field label="Due date (optional)">
+          <input type="date" value={f.dueDate} onChange={set('dueDate')} />
+        </Field>
+      </div>
+      {task && (
+        <Field label="Status">
+          <select value={f.status} onChange={set('status')}>
+            <option value="todo">To do</option>
+            <option value="doing">Doing</option>
+            <option value="done">Done</option>
+          </select>
+        </Field>
+      )}
+      <Field label="Details (optional)">
+        <textarea value={f.details} onChange={set('details')} />
+      </Field>
+      <Button variant="accent block" icon="check" disabled={!f.title.trim()} onClick={save}>
+        {task ? 'Save task' : 'Add task'}
+      </Button>
+      {task && (
+        <button className="link-btn" style={{ marginTop: 14, color: 'var(--bad)' }} onClick={remove}>
+          Delete task
+        </button>
+      )}
+    </Sheet>
   )
 }
 
