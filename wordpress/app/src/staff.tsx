@@ -449,6 +449,18 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
   }
   const latest = project.assets.filter((a) => !project.assets.some((n) => n.versionOf === a.id))
   const phase = currentPhase(project)
+  // The opening gate's real state: the deposit invoice only exists once the agreement is signed,
+  // so no deposit means the signature is still outstanding.
+  const deposit = project.payments.find((p) => p.kind === 'deposit')
+  const gateStatus = project.workUnlocked
+    ? phase
+      ? `Now: ${phase.name}`
+      : 'All phases done'
+    : !deposit
+      ? 'Waiting for the signed agreement'
+      : deposit.proofAt
+        ? 'Deposit proof sent — confirm it to start the work'
+        : 'Waiting for the deposit payment'
   return (
     <div className="screen">
       <button className="link-btn" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none', marginBottom: 14 }} onClick={() => go(`clients/${client.id}`)}>
@@ -464,7 +476,7 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
           <Ring value={project.progress} />
         </div>
         <span className="current">
-          <span className="signal-dot" /> {project.workUnlocked ? (phase ? `Now: ${phase.name}` : 'All phases done') : 'Waiting for signature and deposit'}
+          <span className="signal-dot" /> {gateStatus}
         </span>
       </div>
       <div style={{ margin: '22px 0 18px' }}>
