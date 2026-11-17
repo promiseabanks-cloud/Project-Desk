@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ago, api, boot, currentPhase, date, money, type Asset, type Doc, type Payment, type Phase, type PortalData, type Project } from './api'
 import { go, type Route } from './router'
 import { AssetSheet, ClientPaymentCard, DocumentSheet, FilesHub, ProofSheet, PushBanner, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
@@ -565,10 +565,15 @@ export function Shell({
   hideTabs?: boolean
   extraActions?: React.ReactNode
 }) {
+  const nav = useRef<HTMLElement>(null)
+  // Keep the current tab in view on the phone's horizontal nav bar, however many tabs there are.
+  useEffect(() => {
+    nav.current?.querySelector<HTMLElement>('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [active])
   return (
     <div className="app">
       {!hideTabs && (
-        <nav className="tabbar" aria-label="Main">
+        <nav className="tabbar" aria-label="Main" ref={nav}>
           <span className="side-brand">
             <BrandOnly />
           </span>

@@ -493,9 +493,10 @@ function pd_submit_payment_proof( int $payment_id, int $client_id, int $asset_id
 				'client_id'  => $client_id,
 				'project_id' => (int) $payment['project_id'],
 				'title'      => 'Payment proof to confirm — ' . $payment['label'],
-				'body'       => sprintf( '%s sent proof of payment for %s (%s) on %s.%s Check it and confirm the payment in the Money tab.', $client['company'] ?? 'A client', $payment['label'], pd_format_money( (int) $payment['amount'], $payment['currency'] ), $project['name'] ?? 'their project', $note ? ' Note: ' . $note : '' ),
+				'body'       => sprintf( '%s sent proof of payment for %s (%s) on %s.%s Open it to confirm the payment.', $client['company'] ?? 'A client', $payment['label'], pd_format_money( (int) $payment['amount'], $payment['currency'] ), $project['name'] ?? 'their project', $note ? ' Note: ' . $note : '' ),
 				'channels'   => array( 'email', 'whatsapp' ),
-				'button'     => 'Review payment',
+				'link'       => pd_app_link( 'projects/' . (int) $payment['project_id'], array( 'tab' => 'money' ) ),
+				'button'     => 'Confirm payment',
 			),
 		)
 	);
