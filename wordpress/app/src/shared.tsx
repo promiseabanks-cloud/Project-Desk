@@ -809,6 +809,10 @@ export function ProofSheet({ payment, projectId, onClose, onDone }: { payment: P
       toast('Proof sent', 'We will confirm your payment and email your receipt.')
       onDone()
       onClose()
+    } catch (err) {
+      // Never let a failed proof look like it went through — the client must know to try again.
+      setProgress(0)
+      toast('Proof not sent', (err as Error).message || 'Please try again.', 'bad')
     } finally {
       setBusy(false)
     }
