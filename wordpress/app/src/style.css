@@ -573,7 +573,32 @@ a.card:hover {
 .list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  border-top: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+/* Rows sit inside the raised list surface, divided by hairlines, flush at the ends. */
+.list > .row {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.list > .row:last-child {
+  border-bottom: 0;
+}
+/* A list whose items are already cards (e.g. leads) stays a transparent, gapped stack. */
+.list.cards {
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+  gap: 12px;
+}
+.list.cards > .row {
+  padding-left: 4px;
+  padding-right: 4px;
 }
 .row {
   position: relative;

@@ -1294,7 +1294,7 @@ function LeadsView({ data, reload, open }: { data: ConsoleData; reload: () => vo
           ['all', 'All'],
         ]}
       />
-      <div className="list stagger" style={{ marginTop: 16 }}>
+      <div className="list cards stagger" style={{ marginTop: 16 }}>
         {shown.length === 0 && <Empty icon="mail">No enquiries here yet.</Empty>}
         {shown.map((l) => (
           <div key={l.id} className="card lead-card">
