@@ -188,6 +188,19 @@ function pd_schema(): array {
 			KEY project_id (project_id),
 			KEY assignee_id (assignee_id)
 		) $c;",
+		'CREATE TABLE ' . pd_table( 'push_subs' ) . " (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			user_id bigint(20) unsigned NOT NULL,
+			endpoint text NOT NULL,
+			endpoint_hash char(64) NOT NULL,
+			p256dh varchar(255) NOT NULL,
+			auth varchar(255) NOT NULL,
+			ua varchar(255) NOT NULL DEFAULT '',
+			created_at datetime NOT NULL,
+			PRIMARY KEY  (id),
+			UNIQUE KEY endpoint_hash (endpoint_hash),
+			KEY user_id (user_id)
+		) $c;",
 		'CREATE TABLE ' . pd_table( 'notifications' ) . " (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			audience varchar(20) NOT NULL,

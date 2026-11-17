@@ -1688,6 +1688,44 @@ select option { background: var(--bg); color: var(--fg); }
 .file-group-count { font: 600 0.74rem/1 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* Leads inbox */
+/* Turn-on-notifications banner */
+.push-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  box-shadow: var(--shadow-sm);
+  animation: push-in 0.5s var(--spring) both;
+}
+.push-banner.is-on {
+  background: var(--surface);
+  border-color: var(--line);
+}
+.push-banner .btn { flex: none; }
+.push-x {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+.push-x:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+.push-x svg { width: 16px; height: 16px; }
+@keyframes push-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
 .lead-card { display: grid; gap: 12px; }
 .lead-top { display: flex; align-items: flex-start; gap: 10px; }
 .lead-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 0.86rem; }

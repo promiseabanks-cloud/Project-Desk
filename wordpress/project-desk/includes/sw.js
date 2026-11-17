@@ -25,6 +25,45 @@ function isPrivate(url) {
   return url.pathname.includes('/wp-json/') || url.searchParams.has('rest_route') || url.pathname.includes('/wp-admin/') || url.pathname.includes('wp-login.php')
 }
 
+// Web Push: show the notification, and focus/open the app when it is tapped.
+self.addEventListener('push', (event) => {
+  let data = {}
+  try {
+    data = event.data ? event.data.json() : {}
+  } catch (e) {
+    data = { title: 'Project Desk', body: event.data ? event.data.text() : '' }
+  }
+  const title = data.title || 'Project Desk'
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || '',
+      icon: data.icon || './icon.svg',
+      badge: './icon.svg',
+      tag: data.tag || 'pd-' + Date.now(),
+      renotify: true,
+      data: { url: data.url || './' },
+      vibrate: [80, 40, 80],
+    }),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = (event.notification.data && event.notification.data.url) || './'
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (const c of list) {
+        if ('focus' in c) {
+          c.focus()
+          if ('navigate' in c && target) c.navigate(target).catch(() => {})
+          return
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target)
+    }),
+  )
+})
+
 self.addEventListener('fetch', (event) => {
   const req = event.request
   if (req.method !== 'GET') return

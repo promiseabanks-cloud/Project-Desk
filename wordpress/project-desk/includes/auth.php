@@ -112,7 +112,8 @@ function pd_boot_payload(): array {
 		'role'  => null,
 	);
 	if ( $user->ID && pd_user_has_access( $user ) ) {
-		$out['user'] = array( 'id' => $user->ID, 'name' => $user->display_name, 'email' => $user->user_email );
+		$out['pushKey'] = pd_push_public_key();
+		$out['user']    = array( 'id' => $user->ID, 'name' => $user->display_name, 'email' => $user->user_email );
 		$out['role'] = user_can( $user, 'pd_manage_projects' ) ? ( user_can( $user, 'pd_manage_settings' ) ? 'owner' : 'manager' ) : 'client';
 		$out['can']  = array(
 			'money'    => user_can( $user, 'pd_manage_money' ),

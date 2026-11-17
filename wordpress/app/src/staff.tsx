@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { ago, api, ApiError, boot, currentPhase, date, fileUrl, money, type Asset, type Client, type ConsoleData, type Doc, type Lead, type Payment, type Phase, type Project, type ServiceDef, type Task } from './api'
 import { ClientApp, ProjectRow, Shell } from './client'
 import { go, type Route } from './router'
-import { AssetRow, AssetSheet, DocumentSheet, FilesHub, PaymentRow, Thread, Timeline, UploadSheet, useLoad } from './shared'
+import { AssetRow, AssetSheet, DocumentSheet, FilesHub, PaymentRow, PushBanner, Thread, Timeline, UploadSheet, useLoad } from './shared'
 import { Button, CountUp, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skeleton, toast } from './ui'
 
 type Sheets =
@@ -258,6 +258,7 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
       {sheet?.kind === 'override' && <OverrideSheet {...sheet} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'notices' && (
         <Sheet title="Activity" onClose={() => setSheet(null)}>
+          <PushBanner />
           <div className="list">
             {data.notifications.length === 0 && <Empty icon="bell">Nothing yet.</Empty>}
             {data.notifications.map((n) => (

@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'PD_VERSION', '0.4.0' );
-define( 'PD_DB_VERSION', 6 );
+define( 'PD_DB_VERSION', 7 );
 define( 'PD_FILE', __FILE__ );
 define( 'PD_DIR', __DIR__ );
 
@@ -30,6 +30,7 @@ require_once PD_DIR . '/includes/projects.php';
 require_once PD_DIR . '/includes/billing.php';
 require_once PD_DIR . '/includes/leads.php';
 require_once PD_DIR . '/includes/tasks.php';
+require_once PD_DIR . '/includes/push.php';
 require_once PD_DIR . '/includes/api.php';
 require_once PD_DIR . '/includes/app.php';
 
