@@ -23,6 +23,7 @@ export type Boot = {
   role: Role | null
   can?: { money: boolean; settings: boolean; staff: boolean; override: boolean }
   setupNeeded?: boolean
+  pushKey?: string
 }
 
 export type Phase = {

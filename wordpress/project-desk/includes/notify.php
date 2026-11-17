@@ -138,5 +138,9 @@ function pd_notify( array $inputs ): void {
 				)
 			);
 		}
+		// Ring the recipient's phone(s) with a Web Push, when they have turned it on.
+		if ( function_exists( 'pd_push_dispatch' ) ) {
+			pd_push_dispatch( $in, $audience );
+		}
 	}
 }

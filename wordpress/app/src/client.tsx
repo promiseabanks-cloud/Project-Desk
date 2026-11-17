@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ago, api, boot, currentPhase, date, money, type Asset, type Doc, type Payment, type Phase, type PortalData, type Project } from './api'
 import { go, type Route } from './router'
-import { AssetSheet, ClientPaymentCard, DocumentSheet, FilesHub, ProofSheet, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
+import { AssetSheet, ClientPaymentCard, DocumentSheet, FilesHub, ProofSheet, PushBanner, ReviewSheet, Thread, Timeline, UploadSheet, useLoad } from './shared'
 import { BrandMark, Button, Empty, Field, Icon, Pill, Ring, Segmented, Sheet, Skeleton, toast, useScrolled, useTheme } from './ui'
 
 type Sheets =
@@ -277,6 +277,7 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
       {sheet?.kind === 'review' && <ReviewSheet project={sheet.project} onClose={() => setSheet(null)} onDone={reload} />}
       {sheet?.kind === 'notices' && (
         <Sheet title="Notifications" onClose={() => setSheet(null)}>
+          <PushBanner />
           <div className="list">
             {data.notifications.length === 0 && <Empty icon="bell">No notifications yet.</Empty>}
             {data.notifications.map((n) => (

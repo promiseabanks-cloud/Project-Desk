@@ -568,6 +568,50 @@ check( 'range: suffix', array( 950, 999 ) === pd_parse_range( 'bytes=-50', 1000 
 check( 'range: outside file refused', false === pd_parse_range( 'bytes=1000-', 1000 ) && false === pd_parse_range( 'bytes=5-2', 1000 ) );
 check( 'range: multi-range or junk sends whole file', null === pd_parse_range( 'bytes=0-1,5-6', 1000 ) && null === pd_parse_range( 'items=1-2', 1000 ) );
 
+/* ------------------------------------------------------------ web push */
+
+check( 'push: b64url round-trips binary', "\x00\xffhi?~" === pd_b64url_decode( pd_b64url( "\x00\xffhi?~" ) ) );
+check( 'push: b64url has no padding or url-unsafe chars', ! preg_match( '#[+/=]#', pd_b64url( random_bytes( 20 ) ) ) );
+
+$vapid_pub = pd_push_public_key();
+$point     = pd_b64url_decode( $vapid_pub );
+check( 'push: VAPID public key is a 65-byte uncompressed EC point', 65 === strlen( $point ) && "\x04" === $point[0] );
+check( 'push: VAPID keys are stable across calls', $vapid_pub === pd_push_public_key() );
+
+/* Store a subscription and read it back; a repeat endpoint updates in place. */
+as_user( $owner );
+$ep = 'https://fcm.googleapis.com/fcm/send/' . bin2hex( random_bytes( 8 ) );
+pd_push_save( $owner, $ep, 'client-key-1', 'auth-1', 'TestUA' );
+$subs = pd_push_subs_for( array( $owner ) );
+$mine = array_values( array_filter( $subs, static fn( $s ) => $s['endpoint'] === $ep ) );
+check( 'push: subscription is stored for the user', 1 === count( $mine ) && 'client-key-1' === $mine[0]['p256dh'] );
+pd_push_save( $owner, $ep, 'client-key-2', 'auth-2', 'TestUA' );
+$subs2 = array_values( array_filter( pd_push_subs_for( array( $owner ) ), static fn( $s ) => $s['endpoint'] === $ep ) );
+check( 'push: re-subscribing the same endpoint updates, not duplicates', 1 === count( $subs2 ) && 'client-key-2' === $subs2[0]['p256dh'] );
+pd_push_delete( $ep );
+check( 'push: unsubscribe removes the subscription', 0 === count( array_filter( pd_push_subs_for( array( $owner ) ), static fn( $s ) => $s['endpoint'] === $ep ) ) );
+
+/* Build an encrypted message for a real client keypair and check its shape. */
+if ( function_exists( 'openssl_pkey_derive' ) ) {
+	$client     = openssl_pkey_new( array( 'curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC ) );
+	$cd         = openssl_pkey_get_details( $client );
+	$client_pub = "\x04" . pd_pad_left( $cd['ec']['x'], 32 ) . pd_pad_left( $cd['ec']['y'], 32 );
+	$built      = pd_webpush_build(
+		array(
+			'endpoint' => 'https://fcm.googleapis.com/fcm/send/abc123',
+			'p256dh'   => pd_b64url( $client_pub ),
+			'auth'     => pd_b64url( random_bytes( 16 ) ),
+		),
+		(string) wp_json_encode( array( 'title' => 'Hi', 'body' => 'There' ) )
+	);
+	check( 'push: build produces an encrypted body and headers', is_array( $built ) && strlen( $built['body'] ) > 65 );
+	check( 'push: body carries the 65-byte server key id', is_array( $built ) && 65 === ord( $built['body'][20] ) );
+	$auth_header = is_array( $built ) ? implode( "\n", $built['headers'] ) : '';
+	check( 'push: VAPID Authorization header is present', false !== strpos( $auth_header, 'Authorization: vapid t=' ) && false !== strpos( $auth_header, 'Content-Encoding: aes128gcm' ) );
+	check( 'push: a malformed client key is refused', null === pd_webpush_build( array( 'endpoint' => 'https://x/y', 'p256dh' => pd_b64url( 'too-short' ), 'auth' => pd_b64url( random_bytes( 16 ) ) ), 'x' ) );
+	check( 'push: DER signature converts to a raw 64-byte pair', 64 === strlen( pd_der_to_raw( "\x30\x06\x02\x01\x01\x02\x01\x02" ) ) );
+}
+
 /* ------------------------------------------------------------ report */
 
 ob_end_clean();

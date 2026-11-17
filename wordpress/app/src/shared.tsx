@@ -17,6 +17,123 @@ import {
   type Project,
 } from './api'
 import { Button, Empty, Field, haptic, Icon, MiniRing, Pill, Sheet, SignaturePad, toast } from './ui'
+import { disablePush, enablePush, isSubscribed, pushState, type PushState } from './push'
+
+const PUSH_DISMISSED = 'pd_push_dismissed'
+
+/**
+ * Asks to turn on phone notifications. Shows once when they are supported and not yet on, with a
+ * short guide for iPhone users who need to add the app to their Home Screen first. Dismissible.
+ */
+export function PushBanner() {
+  const [state, setState] = useState<PushState>('default')
+  const [on, setOn] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [dismissed, setDismissed] = useState(() => {
+    try {
+      return localStorage.getItem(PUSH_DISMISSED) === '1'
+    } catch {
+      return false
+    }
+  })
+
+  useEffect(() => {
+    setState(pushState())
+    isSubscribed().then(setOn)
+  }, [])
+
+  const turnOn = async () => {
+    setBusy(true)
+    try {
+      const next = await enablePush()
+      setState(next)
+      if (next === 'granted') {
+        setOn(true)
+        toast('Notifications on', 'This phone will now ring for new activity.')
+      } else if (next === 'denied') {
+        toast('Notifications blocked', 'Turn them back on in your browser settings for this site.', 'bad')
+      }
+    } catch {
+      toast('Could not turn on notifications', 'Please try again.', 'bad')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const turnOff = async () => {
+    setBusy(true)
+    await disablePush().catch(() => {})
+    setOn(false)
+    setBusy(false)
+    toast('Notifications off', 'This phone will no longer ring.')
+  }
+
+  const dismiss = () => {
+    try {
+      localStorage.setItem(PUSH_DISMISSED, '1')
+    } catch {
+      /* private mode */
+    }
+    setDismissed(true)
+  }
+
+  // Already on: a small "on" row with a way to turn off. Never auto-hidden.
+  if (on) {
+    return (
+      <div className="push-banner is-on">
+        <span className="icon-tile">
+          <Icon name="bell" />
+        </span>
+        <span className="grow">
+          <strong style={{ display: 'block' }}>Notifications are on</strong>
+          <span className="muted" style={{ fontSize: '.86rem' }}>This phone rings for new activity.</span>
+        </span>
+        <Button variant="quiet" onClick={turnOff} disabled={busy}>
+          Turn off
+        </Button>
+      </div>
+    )
+  }
+
+  if (dismissed || state === 'unsupported' || state === 'denied') return null
+
+  if (state === 'ios-needs-install') {
+    return (
+      <div className="push-banner">
+        <span className="icon-tile">
+          <Icon name="bell" />
+        </span>
+        <span className="grow">
+          <strong style={{ display: 'block' }}>Get notified on your iPhone</strong>
+          <span className="muted" style={{ fontSize: '.86rem' }}>
+            Tap the Share button, then <b>Add to Home Screen</b>. Open the app from there and turn notifications on.
+          </span>
+        </span>
+        <button className="push-x" onClick={dismiss} aria-label="Dismiss">
+          <Icon name="x" />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="push-banner">
+      <span className="icon-tile">
+        <Icon name="bell" />
+      </span>
+      <span className="grow">
+        <strong style={{ display: 'block' }}>Turn on notifications</strong>
+        <span className="muted" style={{ fontSize: '.86rem' }}>Get a ping on this phone the moment something happens.</span>
+      </span>
+      <Button onClick={turnOn} disabled={busy}>
+        {busy ? 'Just a sec…' : 'Turn on'}
+      </Button>
+      <button className="push-x" onClick={dismiss} aria-label="Dismiss">
+        <Icon name="x" />
+      </button>
+    </div>
+  )
+}
 
 /** Loads data and refreshes it when the app comes back into view and every 45 seconds. */
 export function useLoad<T>(path: string, query?: Record<string, string | number>) {

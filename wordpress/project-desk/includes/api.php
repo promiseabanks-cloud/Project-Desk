@@ -176,6 +176,30 @@ function pd_register_routes(): void {
 		'pd_can_staff'
 	);
 
+	/* -------------------------------------------------- web push (PWA) */
+
+	pd_route(
+		'/push/subscribe',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			$b    = pd_json_body( $r );
+			$keys = isset( $b['keys'] ) && is_array( $b['keys'] ) ? $b['keys'] : array();
+			$ua   = isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ) : '';
+			pd_push_save( get_current_user_id(), (string) ( $b['endpoint'] ?? '' ), (string) ( $keys['p256dh'] ?? '' ), (string) ( $keys['auth'] ?? '' ), $ua );
+			return array( 'ok' => true );
+		},
+		'pd_can_any'
+	);
+	pd_route(
+		'/push/unsubscribe',
+		'POST',
+		static function ( WP_REST_Request $r ) {
+			pd_push_delete( (string) ( pd_json_body( $r )['endpoint'] ?? '' ) );
+			return array( 'ok' => true );
+		},
+		'pd_can_any'
+	);
+
 	/* ----------------------------------------------------- team: tasks */
 
 	pd_route(
