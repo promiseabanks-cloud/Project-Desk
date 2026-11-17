@@ -99,6 +99,8 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
     body = <LeadsView data={data} reload={reload} open={setSheet} />
   } else if (section === 'tasks') {
     body = <TasksView data={data} reload={reload} open={setSheet} />
+  } else if (section === 'insights') {
+    body = <InsightsView data={data} />
   } else if (section === 'money' && can.money) {
     body = <MoneyView data={data} />
   } else if (section === 'settings' && can.settings) {
@@ -109,6 +111,9 @@ export function StaffApp({ route, onSignOut }: { route: Route; onSignOut: () => 
         <header className="page-head">
           <span className="eyebrow">{new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
           <h1>Studio overview</h1>
+          <button className="link-btn" style={{ marginTop: 6 }} onClick={() => go('insights')}>
+            View studio insights →
+          </button>
         </header>
         <div className="kpis stagger">
           <button className="kpi" onClick={() => go('projects')}>
@@ -811,6 +816,231 @@ function MoneyView({ data }: { data: ConsoleData }) {
                 </span>
                 <span className="money-amt ok">{money(pay.amount)}</span>
               </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function InsightsView({ data }: { data: ConsoleData }) {
+  const now = new Date()
+  const thisMonth = (iso: string | null) => {
+    if (!iso) return false
+    const d = new Date(iso)
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+  }
+  const leads = data.leads ?? []
+  const tasks = data.tasks ?? []
+  const team = data.team ?? []
+  const projects = data.projects
+
+  // Pipeline
+  const converted = leads.filter((l) => l.status === 'converted').length
+  const decided = leads.filter((l) => l.status === 'converted' || l.status === 'archived').length
+  const winRate = decided ? Math.round((converted / decided) * 100) : 0
+  const newLeadsMonth = leads.filter((l) => thisMonth(l.createdAt)).length
+  const leadSplit: [string, number, string][] = [
+    ['New', leads.filter((l) => l.status === 'new').length, 'var(--signal)'],
+    ['Contacted', leads.filter((l) => l.status === 'contacted').length, 'var(--foam)'],
+    ['Converted', converted, 'var(--accent)'],
+    ['Archived', leads.filter((l) => l.status === 'archived').length, 'var(--line)'],
+  ]
+  const leadTotal = leadSplit.reduce((s, [, n]) => s + n, 0)
+
+  // Projects
+  const active = projects.filter((p) => p.status === 'active')
+  const overdue = active.filter((p) => p.dueDate && new Date(p.dueDate + 'T00:00:00').getTime() < Date.now() - 86400e3)
+  const completed = projects.filter((p) => p.status === 'completed')
+  const avgProgress = active.length ? Math.round(active.reduce((s, p) => s + p.progress, 0) / active.length) : 0
+
+  // Delivery & quality
+  const phases = projects.flatMap((p) => p.phases)
+  const donePhases = phases.filter((ph) => ph.startedAt && ph.completedAt)
+  const avgTurnaround = donePhases.length
+    ? Math.round(donePhases.reduce((s, ph) => s + (new Date(ph.completedAt!).getTime() - new Date(ph.startedAt!).getTime()) / 86400e3, 0) / donePhases.length)
+    : 0
+  const toReview = projects.flatMap((p) => p.assets).filter((a) => a.status === 'pending').length
+
+  // Satisfaction
+  const reviews = projects.flatMap((p) => p.reviews).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+  const avgRating = reviews.length ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0
+
+  // Team load
+  const openByPerson = team
+    .map((m) => ({ name: m.name, open: tasks.filter((t) => t.status !== 'done' && t.assigneeId === m.id).length }))
+    .sort((a, b) => b.open - a.open)
+  const maxLoad = Math.max(1, ...openByPerson.map((p) => p.open))
+
+  return (
+    <div className="screen">
+      <header className="page-head">
+        <span className="eyebrow">Insights</span>
+        <h1>How the studio is doing</h1>
+        <p className="muted">A read on your pipeline, delivery and team — built from everything already in Project Desk.</p>
+      </header>
+
+      <section className="section">
+        <div className="section-head">
+          <h3>Pipeline</h3>
+        </div>
+        <div className="kpis">
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Win rate</span>
+            <strong>
+              <CountUp value={winRate} />%
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">New this month</span>
+            <strong>
+              <CountUp value={newLeadsMonth} />
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Clients won</span>
+            <strong>
+              <CountUp value={converted} />
+            </strong>
+          </div>
+        </div>
+        {leadTotal > 0 && (
+          <>
+            <div className="split-bar" aria-hidden="true">
+              {leadSplit.map(([label, n, color]) => n > 0 && <span key={label} style={{ width: `${(n / leadTotal) * 100}%`, background: color }} />)}
+            </div>
+            <div className="split-legend">
+              {leadSplit.map(([label, n, color]) => (
+                <span key={label}>
+                  <i style={{ background: color }} /> {label} {n}
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h3>Projects</h3>
+        </div>
+        <div className="insight-ring">
+          <Ring value={avgProgress} />
+          <div>
+            <strong style={{ display: 'block', fontSize: '1.05rem' }}>Average progress</strong>
+            <span className="muted">across {active.length} active project{active.length === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+        <div className="kpis">
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Active</span>
+            <strong>
+              <CountUp value={active.length} />
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Overdue</span>
+            <strong style={{ color: overdue.length ? 'var(--bad)' : undefined }}>
+              <CountUp value={overdue.length} />
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Completed</span>
+            <strong>
+              <CountUp value={completed.length} />
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h3>Delivery &amp; quality</h3>
+        </div>
+        <div className="kpis">
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Avg phase turnaround</span>
+            <strong>
+              {avgTurnaround > 0 ? (
+                <>
+                  <CountUp value={avgTurnaround} />
+                  <span style={{ fontSize: '1rem' }}>d</span>
+                </>
+              ) : (
+                '—'
+              )}
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">Phases done</span>
+            <strong>
+              <CountUp value={donePhases.length} />
+            </strong>
+          </div>
+          <div className="kpi" style={{ cursor: 'default' }}>
+            <span className="eyebrow">To review</span>
+            <strong style={{ color: toReview ? 'var(--warn)' : undefined }}>
+              <CountUp value={toReview} />
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <h3>Client satisfaction</h3>
+        </div>
+        {reviews.length === 0 ? (
+          <Empty icon="star">No reviews yet.</Empty>
+        ) : (
+          <>
+            <div className="sat-head">
+              <strong className="sat-score">{avgRating.toFixed(1)}</strong>
+              <span className="stars" aria-label={`${avgRating.toFixed(1)} out of 5`}>
+                {[1, 2, 3, 4, 5].map((i) => (
+                  <Icon key={i} name="star" className={i <= Math.round(avgRating) ? 'star-on' : 'star-off'} />
+                ))}
+              </span>
+              <span className="muted">
+                {reviews.length} review{reviews.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="list">
+              {reviews.slice(0, 3).map((r) => (
+                <div key={r.id} className="row" style={{ alignItems: 'flex-start' }}>
+                  <span className="grow">
+                    <span className="stars small" aria-hidden="true">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <Icon key={i} name="star" className={i <= r.rating ? 'star-on' : 'star-off'} />
+                      ))}
+                    </span>
+                    <span className="muted" style={{ display: 'block', fontSize: '.9rem', marginTop: 2 }}>
+                      "{r.body}" — {r.authorName}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      {openByPerson.length > 0 && (
+        <section className="section">
+          <div className="section-head">
+            <h3>Team load</h3>
+            <span className="file-group-count">{tasks.filter((t) => t.status !== 'done').length} open</span>
+          </div>
+          <div className="load-bars">
+            {openByPerson.map((p) => (
+              <div key={p.name} className="load-row">
+                <span className="load-name">{p.name.split(' ')[0]}</span>
+                <span className="load-track">
+                  <i style={{ width: `${(p.open / maxLoad) * 100}%` }} />
+                </span>
+                <span className="load-n">{p.open}</span>
+              </div>
             ))}
           </div>
         </section>
