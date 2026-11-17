@@ -211,17 +211,27 @@ p {
   z-index: 30;
   height: calc(var(--tabbar) + var(--safe-b));
   padding-bottom: var(--safe-b);
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  /* Horizontal scroller on phones so no tab is ever cut off — swipe left/right to reach them all. */
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
   background: var(--glass);
   backdrop-filter: saturate(1.6) blur(20px);
   -webkit-backdrop-filter: saturate(1.6) blur(20px);
   border-top: 1px solid var(--line);
   box-shadow: 0 -8px 24px -16px rgba(14, 26, 27, 0.3);
 }
+.tabbar::-webkit-scrollbar {
+  display: none;
+}
 .tab {
   position: relative;
+  flex: 1 0 auto;
+  min-width: 70px;
   display: grid;
   place-items: center;
   align-content: center;
@@ -303,6 +313,8 @@ p {
     position: sticky;
     top: 0;
     height: 100dvh;
+    display: grid;
+    overflow: visible;
     grid-auto-flow: row;
     grid-auto-rows: max-content;
     align-content: start;
@@ -1549,9 +1561,11 @@ select option { background: var(--bg); color: var(--fg); }
 .pct-box { position: relative; display: flex; align-items: center; }
 .pct-box input { width: 100%; padding-right: 26px; text-align: right; font-variant-numeric: tabular-nums; }
 .pct-box i { position: absolute; right: 11px; font-style: normal; color: var(--muted); pointer-events: none; }
-.price-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.price-card { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; padding: 16px; margin-bottom: 16px; }
 .price-card > div { display: grid; gap: 4px; min-width: 0; }
-.price-card .amount { font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; }
+.price-card .eyebrow { white-space: nowrap; }
+/* The amounts scale down to stay on one line on narrow phones instead of truncating to "₦1,850,…". */
+.price-card .amount { font-size: clamp(0.8rem, 3.7vw, 1.05rem); white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 .pay-card .pay-note { align-self: center; font-size: 0.85rem; }
 .logo-field { display: flex; gap: 10px; align-items: center; }
 .logo-field img { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex: none; background: var(--tint); }
