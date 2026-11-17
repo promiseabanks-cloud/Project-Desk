@@ -1751,3 +1751,63 @@ select option { background: var(--bg); color: var(--fg); }
 .color-field { display: flex; gap: 10px; align-items: center; }
 .color-field input[type='color'] { width: 44px; height: 42px; padding: 2px; border-radius: var(--r); border: 1px solid var(--line); background: none; flex: none; cursor: pointer; }
 .color-field input:not([type='color']) { flex: 1; min-width: 0; }
+
+/* ------------------------------------------------- motion layer (richer) */
+/* Staggered entrances, animated meters and livelier micro-interactions.
+   Everything here is suppressed under prefers-reduced-motion by the global rule. */
+
+/* KPI tiles rise in, one after another. */
+.kpis > .kpi { animation: rise 0.55s var(--spring) both; }
+.kpis > .kpi:nth-child(1) { animation-delay: 0.04s; }
+.kpis > .kpi:nth-child(2) { animation-delay: 0.1s; }
+.kpis > .kpi:nth-child(3) { animation-delay: 0.16s; }
+.kpis > .kpi:nth-child(4) { animation-delay: 0.22s; }
+
+/* The lead-status split bar sweeps in, segment by segment. */
+.split-bar span { transform-origin: left; animation: bar-fill 0.8s var(--ease-out) both; }
+.split-bar span:nth-child(1) { animation-delay: 0.15s; }
+.split-bar span:nth-child(2) { animation-delay: 0.27s; }
+.split-bar span:nth-child(3) { animation-delay: 0.39s; }
+.split-bar span:nth-child(4) { animation-delay: 0.51s; }
+@keyframes bar-fill { from { transform: scaleX(0); } }
+
+/* Team-load bars grow from the left on entry. */
+.load-track i { transform-origin: left; animation: bar-fill 0.9s var(--spring) both; animation-delay: 0.2s; }
+
+/* Workload chips pop in together. */
+.workload-chip { animation: rise 0.5s var(--spring) both; }
+.workload-chip:nth-child(1) { animation-delay: 0.06s; }
+.workload-chip:nth-child(2) { animation-delay: 0.12s; }
+.workload-chip:nth-child(3) { animation-delay: 0.18s; }
+.workload-chip:nth-child(4) { animation-delay: 0.24s; }
+.workload-chip:nth-child(n + 5) { animation-delay: 0.3s; }
+
+/* Satisfaction score + stars arrive with a little life. */
+.sat-head { animation: rise 0.6s var(--spring) both; animation-delay: 0.1s; }
+.stars svg { animation: star-pop 0.5s var(--spring) both; }
+.stars svg:nth-child(1) { animation-delay: 0.14s; }
+.stars svg:nth-child(2) { animation-delay: 0.2s; }
+.stars svg:nth-child(3) { animation-delay: 0.26s; }
+.stars svg:nth-child(4) { animation-delay: 0.32s; }
+.stars svg:nth-child(5) { animation-delay: 0.38s; }
+@keyframes star-pop { 0% { transform: scale(0) rotate(-25deg); opacity: 0; } 70% { transform: scale(1.2) rotate(4deg); } 100% { transform: none; opacity: 1; } }
+
+/* Cards and tiles press in on tap for a tactile feel. */
+button.card:active,
+a.card:active,
+button.kpi:active,
+a.kpi:active { transform: scale(0.98); }
+
+/* Status chip gives a quick pulse as it changes. */
+.btn.chip:active { transform: scale(0.9); }
+
+/* Icon tiles in rows give a gentle spring on hover. */
+button.row:hover .icon-tile,
+a.row:hover .icon-tile { transform: scale(1.08) rotate(-3deg); }
+.icon-tile { transition: transform 0.35s var(--spring); }
+
+/* FAB breathes a touch on hover. */
+.fab:hover { transform: translateY(-2px) scale(1.03); box-shadow: var(--shadow-lift); }
+
+/* The progress ring's number and ring already animate; nudge the ring label up. */
+.ring .label { animation: rise 0.6s var(--spring) both; animation-delay: 0.25s; }
