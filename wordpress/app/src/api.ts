@@ -244,10 +244,11 @@ export async function api<T>(
     headers['Content-Type'] = 'application/json'
     body = JSON.stringify(options.body)
   }
+  const method = options.method ?? (body ? 'POST' : 'GET')
   let response: Response
   try {
     response = await fetch(apiUrl(path, options.query), {
-      method: options.method ?? (body ? 'POST' : 'GET'),
+      method,
       headers,
       body,
       credentials: 'same-origin',
@@ -257,9 +258,40 @@ export async function api<T>(
   }
   const data = (await response.json().catch(() => null)) as (T & { message?: string; code?: string; nonce?: string }) | null
   if (!response.ok) {
+    // WordPress REST nonces expire after about a day, while the sign-in cookie lasts weeks. So an app
+    // left open past that returns "Cookie check failed" though the user is still really signed in.
+    if (response.status === 403 && data?.code === 'rest_cookie_invalid_nonce' && !/^\/auth\//.test(path)) {
+      setNonce('')
+      // Reloading re-prints a fresh nonce from the still-valid cookie, keeping the user signed in. If
+      // the cookie is truly gone, the reload lands on the sign-in screen. A short guard stops any loop:
+      // if reloading didn't help, fall back to a clean sign-in with a plain message.
+      let last = 0
+      try {
+        last = Number(sessionStorage.getItem('pd_nonce_reload') || '0')
+      } catch {
+        /* private mode */
+      }
+      if (method === 'GET' && Date.now() - last > 30000) {
+        try {
+          sessionStorage.setItem('pd_nonce_reload', String(Date.now()))
+        } catch {
+          /* private mode */
+        }
+        window.location.reload()
+        await new Promise(() => {}) // hold until the page unloads so no error flashes
+      } else {
+        window.dispatchEvent(new Event('pd-session-expired'))
+      }
+      throw new ApiError('Your session has ended. Please sign in again.', 401, 'session_expired')
+    }
     throw new ApiError(data?.message || 'That did not work. Please try again.', response.status, data?.code || 'error')
   }
   if (data && typeof data === 'object' && 'nonce' in data && typeof data.nonce === 'string' && data.nonce) setNonce(data.nonce)
+  try {
+    sessionStorage.removeItem('pd_nonce_reload')
+  } catch {
+    /* private mode */
+  }
   return data as T
 }
 

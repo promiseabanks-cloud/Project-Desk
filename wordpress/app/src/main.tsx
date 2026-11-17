@@ -1,4 +1,4 @@
-import { StrictMode, useCallback, useState } from 'react'
+import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { api, boot, setNonce, type Boot } from './api'
 import { ApplyForm } from './apply'
@@ -27,6 +27,19 @@ function App() {
     }
     go('', true)
     window.location.reload()
+  }, [])
+
+  // When a session quietly expires mid-use, return to a clean sign-in instead of a cryptic error.
+  useEffect(() => {
+    const onExpired = () => {
+      if (!boot.user) return
+      boot.user = null
+      boot.role = null
+      setSession({ ...boot })
+      toast('Session ended', 'Please sign in again to continue.')
+    }
+    window.addEventListener('pd-session-expired', onExpired)
+    return () => window.removeEventListener('pd-session-expired', onExpired)
   }, [])
 
   const [first] = route.path
