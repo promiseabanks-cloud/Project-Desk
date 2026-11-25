@@ -293,10 +293,16 @@ function pd_register_routes(): void {
 			if ( ! $client || ! $name ) {
 				return pd_error( 'Choose a client and name the project.' );
 			}
-			[ $price, $pct ] = pd_price_input( $b );
-			$id              = pd_create_project( (int) $client['id'], $name, sanitize_key( (string) ( $b['service'] ?? '' ) ), pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ), null, $price, $pct, pd_milestones_input( $b ) );
+			$service_key     = sanitize_key( (string) ( $b['service'] ?? '' ) );
+			$free            = pd_service_is_free( $service_key );
+			[ $price, $pct ] = $free ? array( 0, 0 ) : pd_price_input( $b );
+			$id              = pd_create_project( (int) $client['id'], $name, $service_key, pd_textarea( $b['summary'] ?? '', 2000 ), pd_date( $b['dueDate'] ?? '' ), null, $price, $pct, $free ? array() : pd_milestones_input( $b ) );
 			if ( is_wp_error( $id ) ) {
 				return $id;
+			}
+			if ( $free ) {
+				pd_send_free_redesign_welcome( (int) $client['id'], (int) $id, (string) $client['contact_name'], (string) $client['email'] );
+				return new WP_REST_Response( array( 'projectId' => $id ), 201 );
 			}
 			if ( pd_agreement_signed( $id ) ) {
 				pd_create_deposit_invoice( $id );
@@ -481,6 +487,9 @@ function pd_register_routes(): void {
 			$project = pd_get_row( 'projects', (int) $r['id'] );
 			if ( ! $project ) {
 				return pd_error( 'Project not found.', 404 );
+			}
+			if ( pd_service_is_free( (string) $project['service'] ) ) {
+				return pd_error( 'This is a free program project, so it has no invoices.', 409 );
 			}
 			$b          = pd_json_body( $r );
 			$label      = pd_text( $b['label'] ?? '', 160 );

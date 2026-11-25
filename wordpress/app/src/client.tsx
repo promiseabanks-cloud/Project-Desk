@@ -231,7 +231,7 @@ export function ClientApp({ route, clientId, onSignOut }: { route: Route; client
     ['projects', 'Projects', 'folder', false],
     ['documents', 'Documents', 'doc', data.documents.some((d) => d.status === 'awaiting_signature')],
     ['payments', 'Payments', 'wallet', data.projects.some((p) => p.payments.some((x) => x.status === 'overdue'))],
-  ]
+  ].filter((t) => t[0] !== 'payments' || data.projects.length === 0 || data.projects.some((p) => !p.free)) as [string, string, string, boolean][]
 
   return (
     <>

@@ -87,6 +87,7 @@ export type Project = {
   name: string
   service: string
   serviceLabel: string
+  free: boolean
   summary: string
   status: 'active' | 'on_hold' | 'completed' | 'cancelled'
   recurring: boolean
@@ -166,7 +167,7 @@ export type TeamMember = { id: number; name: string }
 
 export type Notice = { id: number; projectId: number | null; title: string; body: string; createdAt: string; read: boolean }
 
-export type ServiceDef = { label: string; recurring: boolean; phases: { name: string; signoff: boolean }[] }
+export type ServiceDef = { label: string; recurring: boolean; free?: boolean; phases: { name: string; signoff: boolean }[] }
 
 export type PortalData = { preview: boolean; client: Client; projects: Project[]; documents: Doc[]; notifications: Notice[] }
 export type ConsoleData = {

@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * and a footer with the legal name, RC number, address, email, phone, website and tagline.
  * Table layout with inline styles so it holds up in Gmail, Outlook and phone mail apps.
  */
-function pd_email_html( string $title, string $body, string $button_url = '', string $button_label = 'Open your portal' ): string {
+function pd_email_html( string $title, string $body, string $button_url = '', string $button_label = 'Open your portal', string $extra_html = '' ): string {
 	$s      = pd_settings();
 	$brand  = sanitize_hex_color( (string) $s['brand_color'] ) ? (string) $s['brand_color'] : '#0B3B40';
 	$name   = esc_html( (string) $s['business_name'] );
@@ -62,6 +62,7 @@ function pd_email_html( string $title, string $body, string $button_url = '', st
 	$h .= '<tr><td style="padding:30px 28px 10px">';
 	$h .= '<h1 style="margin:0 0 16px;font-size:21px;line-height:1.3;font-weight:700;letter-spacing:-0.3px;color:#0E1A1B">' . esc_html( $title ) . '</h1>';
 	$h .= $body_html;
+	$h .= $extra_html; // Trusted markup built by the plugin (never user input).
 	if ( $button_url ) {
 		$h .= '<table role="presentation" cellpadding="0" cellspacing="0" style="margin:8px 0 22px"><tr><td style="background:' . $accent . ';border-radius:12px">';
 		$h .= '<a href="' . esc_url( $button_url ) . '" style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:700;color:#0E1A1B;text-decoration:none">' . esc_html( $button_label ) . ' &rarr;</a>';
@@ -111,7 +112,7 @@ function pd_notify( array $inputs ): void {
 		foreach ( (array) ( $in['channels'] ?? array() ) as $channel ) {
 			if ( 'email' === $channel ) {
 				$link   = (string) ( $in['link'] ?? $s['portal_url'] );
-				$status = pd_send_email( $recipient, (string) $in['title'], pd_email_html( (string) $in['title'], (string) $in['body'], $link, (string) ( $in['button'] ?? ( 'client' === $audience ? 'Open your portal' : 'Open Project Desk' ) ) ) );
+				$status = pd_send_email( $recipient, (string) $in['title'], pd_email_html( (string) $in['title'], (string) $in['body'], $link, (string) ( $in['button'] ?? ( 'client' === $audience ? 'Open your portal' : 'Open Project Desk' ) ), (string) ( $in['html'] ?? '' ) ) );
 				$rows[] = array( 'email', $status, $recipient );
 			} elseif ( 'whatsapp' === $channel ) {
 				/**
