@@ -269,6 +269,7 @@ function pd_install(): void {
 
 function pd_maybe_upgrade(): void {
 	if ( (int) get_option( 'pd_db_version', 0 ) < PD_DB_VERSION ) {
+		pd_seed_free_service();
 		pd_install();
 	}
 	if ( ! wp_next_scheduled( 'pd_billing_reminders' ) ) {

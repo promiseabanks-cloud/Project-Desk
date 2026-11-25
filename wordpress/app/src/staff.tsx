@@ -486,7 +486,7 @@ function StaffProject({ project, client, reload, open, tab }: { project: Project
           options={[
             ['plan', 'Plan'],
             ['files', `Files · ${latest.length}`],
-            ['money', 'Money'],
+            ...(project.free ? [] : ([['money', 'Money']] as [string, string][])),
             ['messages', `Messages · ${project.messages.length}`],
           ]}
         />
@@ -1393,7 +1393,7 @@ function OnboardSheet({ services, lead, onClose, onDone }: { services: Record<st
           /* client is created; the lead status is non-critical */
         }
       }
-      toast(`${f.company} is onboarded`, `Invite and agreement sent to ${f.email}.`)
+      toast(`${f.company} is onboarded`, svc?.free ? `Invite and welcome email sent to ${f.email}.` : `Invite and agreement sent to ${f.email}.`)
       onClose()
       onDone(r.clientId)
     } catch (e) {
@@ -1403,7 +1403,9 @@ function OnboardSheet({ services, lead, onClose, onDone }: { services: Record<st
   return (
     <Sheet title={lead ? 'Convert enquiry to client' : 'Onboard a client'} onClose={onClose}>
       <p className="muted" style={{ marginBottom: 20 }}>
-        Creates their portal, emails an invite, sets up the project with its phases and sends the service agreement to sign.
+        {svc?.free
+          ? 'Creates their portal, emails an invite, sets up the project with its delivery and review steps and sends the free redesign welcome email with the terms.'
+          : 'Creates their portal, emails an invite, sets up the project with its phases and sends the service agreement to sign.'}
       </p>
       {error && <div className="form-error">{error}</div>}
       <Field label="Company">
@@ -1461,8 +1463,9 @@ function OnboardSheet({ services, lead, onClose, onDone }: { services: Record<st
           <input type="date" value={f.dueDate} onChange={set('dueDate')} />
         </Field>
       </div>
-      {can.money && <PriceFields price={f.price} pct={f.depositPercent} onChange={(price, depositPercent) => setF({ ...f, price, depositPercent })} />}
-      {can.money && svc && naira(f.price) > 0 && <MilestonePlanner phases={svc.phases} price={f.price} deposit={f.depositPercent} milestones={milestones} onChange={setMilestones} />}
+      {svc?.free && <FreeProgramNote />}
+      {can.money && !svc?.free && <PriceFields price={f.price} pct={f.depositPercent} onChange={(price, depositPercent) => setF({ ...f, price, depositPercent })} />}
+      {can.money && svc && !svc.free && naira(f.price) > 0 && <MilestonePlanner phases={svc.phases} price={f.price} deposit={f.depositPercent} milestones={milestones} onChange={setMilestones} />}
       <Field label="Notes (only your team sees these)">
         <textarea value={f.notes} onChange={set('notes')} />
       </Field>
@@ -1475,6 +1478,18 @@ function OnboardSheet({ services, lead, onClose, onDone }: { services: Record<st
 
 /** Naira amount typed by a person, to a number (or 0). */
 const naira = (v: string) => Number(v.replace(/[^0-9.]/g, '')) || 0
+
+/** Shown instead of the price fields for a free program service. */
+function FreeProgramNote() {
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <div className="eyebrow" style={{ marginBottom: 6 }}>Free program</div>
+      <p className="muted" style={{ margin: 0 }}>
+        No price, deposit, agreement or invoices. The client receives a welcome email with the terms: timely resources, reviews and replies.
+      </p>
+    </div>
+  )
+}
 
 function PriceFields({ price, pct, onChange }: { price: string; pct: string; onChange: (price: string, pct: string) => void }) {
   const amount = naira(price)
@@ -1615,8 +1630,9 @@ function NewProjectSheet({ client, services, onClose, onDone }: { client: Client
       <Field label="Target date (optional)">
         <input type="date" value={dueDate} onChange={(e) => setDue(e.target.value)} />
       </Field>
-      {can.money && <PriceFields price={price} pct={pct} onChange={(a, b) => (setPrice(a), setPct(b))} />}
-      {can.money && svc && naira(price) > 0 && <MilestonePlanner phases={svc.phases} price={price} deposit={pct} milestones={milestones} onChange={setMilestones} />}
+      {svc?.free && <FreeProgramNote />}
+      {can.money && !svc?.free && <PriceFields price={price} pct={pct} onChange={(a, b) => (setPrice(a), setPct(b))} />}
+      {can.money && svc && !svc.free && naira(price) > 0 && <MilestonePlanner phases={svc.phases} price={price} deposit={pct} milestones={milestones} onChange={setMilestones} />}
       <Button
         variant="accent block"
         disabled={!name.trim()}

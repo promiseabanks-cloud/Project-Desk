@@ -23,10 +23,37 @@ function pd_opening_phases(): array {
 	);
 }
 
+/**
+ * Opening phases for a free program project: there is no agreement or deposit to wait for, so the
+ * slot is simply confirmed and the first delivery phase starts straight away.
+ */
+function pd_free_opening_phases(): array {
+	return array( array( 'name' => 'Slot confirmed', 'stage' => 'opening', 'signoff' => false ) );
+}
+
+/** The built-in free redesign program service: delivery and review steps only, nothing billable. */
+function pd_free_redesign_service(): array {
+	$p = static fn( string $name, bool $signoff = false ) => array( 'name' => $name, 'signoff' => $signoff );
+	return array(
+		'label'     => 'Free Redesign Program',
+		'recurring' => false,
+		'free'      => true,
+		'phases'    => array(
+			$p( 'Your resources: text, pictures, videos and files' ),
+			$p( 'Design direction (your review)', true ),
+			$p( 'Build' ),
+			$p( 'Testing and your final review', true ),
+			$p( 'Launch' ),
+			$p( 'Handover' ),
+		),
+	);
+}
+
 /** Default services and their work phases (Banks Solution). Signoff phases need the client's approval. */
 function pd_default_services(): array {
 	$p = static fn( string $name, bool $signoff = false ) => array( 'name' => $name, 'signoff' => $signoff );
 	return array(
+		'free_redesign' => pd_free_redesign_service(),
 		'website'    => array(
 			'label'     => 'Websites & e-commerce',
 			'recurring' => false,
@@ -171,9 +198,10 @@ function pd_public_settings(): array {
 		'maxUploadMb'    => (int) $s['max_upload_mb'],
 		'categories'     => array_values( $s['asset_categories'] ),
 		'depositPercent' => (int) $s['deposit_percent'],
+		// Free program services are by invitation, so they are not offered on the public enquiry form.
 		'services'       => array_map(
 			static fn( $svc ) => array( 'label' => $svc['label'], 'recurring' => (bool) $svc['recurring'] ),
-			$s['services']
+			array_filter( $s['services'], static fn( $svc ) => empty( $svc['free'] ) )
 		),
 	);
 }
@@ -274,6 +302,9 @@ function pd_update_settings( array $input ) {
 				'recurring' => ! empty( $svc['recurring'] ),
 				'phases'    => $phases,
 			);
+			if ( ! empty( $svc['free'] ) ) {
+				$services[ $key ]['free'] = true;
+			}
 		}
 		$s['services'] = $services;
 	}
@@ -315,4 +346,19 @@ function pd_format_money( int $minor, string $currency = '' ): string {
 	$symbols  = array( 'NGN' => '₦', 'USD' => '$', 'GBP' => '£', 'EUR' => '€', 'GHS' => '₵', 'KES' => 'KSh ', 'ZAR' => 'R' );
 	$symbol   = $symbols[ $currency ] ?? $currency . ' ';
 	return $symbol . number_format( $minor / 100, 0 === $minor % 100 ? 0 : 2 );
+}
+
+/** True when the service is a free program one: no price, deposit, agreement or invoices. */
+function pd_service_is_free( string $service ): bool {
+	$services = pd_settings()['services'];
+	return ! empty( $services[ $service ]['free'] );
+}
+
+/** Adds the free redesign service to an install whose saved settings predate it. Safe to repeat. */
+function pd_seed_free_service(): void {
+	$saved = get_option( 'pd_settings', array() );
+	if ( is_array( $saved ) && isset( $saved['services'] ) && is_array( $saved['services'] ) && ! isset( $saved['services']['free_redesign'] ) ) {
+		$saved['services'] = array( 'free_redesign' => pd_free_redesign_service() ) + $saved['services'];
+		update_option( 'pd_settings', $saved, false );
+	}
 }

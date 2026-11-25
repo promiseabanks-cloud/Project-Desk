@@ -134,6 +134,7 @@ function pd_load_projects( int $client_id, bool $staff ): array {
 				'name'         => $p['name'],
 				'service'      => $p['service'],
 				'serviceLabel' => $services[ $p['service'] ]['label'] ?? $p['service'],
+				'free'         => ! empty( $services[ $p['service'] ]['free'] ),
 				'summary'      => (string) $p['summary'],
 				'status'       => $p['status'],
 				'recurring'    => (bool) $p['recurring'],
@@ -259,9 +260,10 @@ function pd_create_project( int $client_id, string $name, string $service, strin
 		)
 	);
 	$project_id = (int) $wpdb->insert_id;
-	$open_count = count( pd_opening_phases() );
+	$opening    = ! empty( $services[ $service ]['free'] ) ? pd_free_opening_phases() : pd_opening_phases();
+	$open_count = count( $opening );
 	$phases     = array_merge(
-		pd_opening_phases(),
+		$opening,
 		array_map( static fn( $p ) => $p + array( 'stage' => 'work' ), $services[ $service ]['phases'] )
 	);
 	foreach ( $phases as $i => $p ) {
@@ -390,10 +392,16 @@ function pd_onboard_client( array $in ) {
 	$client_id  = (int) $wpdb->insert_id;
 	$label      = $svcs[ $service ]['label'];
 	$name       = pd_text( $in['projectName'] ?? '', 160 ) ?: $company . ' — ' . $label;
-	[ $price, $pct ] = pd_price_input( $in );
-	$bills           = pd_milestones_input( $in );
+	$free            = ! empty( $svcs[ $service ]['free'] );
+	[ $price, $pct ] = $free ? array( 0, 0 ) : pd_price_input( $in );
+	$bills           = $free ? array() : pd_milestones_input( $in );
 	$project_id      = pd_create_project( $client_id, $name, $service, pd_textarea( $in['summary'] ?? '', 2000 ), pd_date( $in['dueDate'] ?? '' ), null, $price, $pct, $bills );
 	$pct             = (int) pd_get_row( 'projects', $project_id )['deposit_percent'];
+	if ( $free ) {
+		// No agreement, deposit or invoices: the client gets the welcome email with the terms instead.
+		pd_send_free_redesign_welcome( $client_id, $project_id, $contact, $email );
+		return array( 'clientId' => $client_id, 'projectId' => $project_id, 'documentId' => 0, 'userId' => $user_id );
+	}
 	$doc_id          = pd_create_document( $client_id, $project_id, 'Service agreement — ' . $label, pd_agreement_text( $company, $label, $price, $pct ) );
 
 	$s = pd_settings();
@@ -422,6 +430,9 @@ function pd_work_unlocked( int $project_id ): bool {
 	$project = pd_get_row( 'projects', $project_id );
 	if ( ! $project ) {
 		return false;
+	}
+	if ( pd_service_is_free( (string) $project['service'] ) ) {
+		return true; // Nothing to sign or pay for in the free program.
 	}
 	$signed = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . pd_table( 'documents' ) . " WHERE client_id = %d AND (project_id = %d OR project_id IS NULL) AND kind = 'agreement' AND status = 'signed'", $project['client_id'], $project_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 	$paid   = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . pd_table( 'payments' ) . " WHERE project_id = %d AND kind = 'deposit' AND status = 'paid'", $project_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
